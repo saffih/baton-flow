@@ -1,0 +1,10 @@
+{
+  "current_checkpoint": "run_hldspec",
+  "current_stage": "NO_WORKSPACE",
+  "next_action": "No active checkpoint question queue was found.",
+  "questions": [],
+  "queue_path": "",
+  "schema_version": 1,
+  "status": "NO_ACTIVE_QUESTIONS",
+  "workspace": "/Users/saffi/code/flow"
+}

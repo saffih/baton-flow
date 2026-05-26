@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+"""Flow CLI entry point (HLD-003).
+
+The single official way to invoke Flow. Adds impl/ to the path and delegates
+to flow_runtime.cli so the working directory and import root are consistent.
+"""
+
+import os
+import sys
+
+_IMPL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "impl")
+sys.path.insert(0, _IMPL)
+
+from flow_runtime.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    raise SystemExit(main())

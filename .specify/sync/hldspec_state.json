@@ -1,0 +1,18 @@
+{
+  "blocking_questions": [],
+  "controlling_artifacts": [],
+  "current_checkpoint": "run_hldspec",
+  "current_stage": "NO_WORKSPACE",
+  "last_completed_stage": "none",
+  "legacy_supporting_artifacts": [],
+  "next_allowed_actions": [
+    "run scripts/hldspec_run.sh <source-HLD.md>"
+  ],
+  "notes": [],
+  "schema_version": 1,
+  "source_hld": "/Users/saffi/code/flow/HLD.raw.md",
+  "source_hld_modified": false,
+  "supporting_artifacts": [],
+  "working_hld_modified": false,
+  "workspace": "/Users/saffi/code/flow"
+}
