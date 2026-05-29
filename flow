@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Baton Flow CLI entry point. Runners invoke `flow <verb>`; this delegates to flow.py.
+exec python3 "$(dirname "$0")/flow.py" "$@"

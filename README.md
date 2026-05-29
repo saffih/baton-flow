@@ -11,7 +11,29 @@ waits; the session never idles.
 
 The design is the single source of truth: see **[HLD.md](HLD.md)**.
 
-## Status
+## Layout
 
-Design phase. No implementation yet — `HLD.md` defines the model, the agnostic
-CLI + markdown contract, the task lifecycle, and the human-in-the-loop escalation rules.
+- **[HLD.md](HLD.md)** — the design (single source of truth).
+- **[core.md](core.md)** — the agnostic loop a runner executes (CLI + markdown only).
+- **flow.py** — the runtime: SQLite source of truth, all CLI verbs, markdown projection.
+- **test_flow.py** — lifecycle, fork-join, escalation, and reopen tests.
+
+## Usage
+
+```bash
+flow() { python3 flow.py "$@"; }   # or: chmod +x flow.py && ./flow.py …
+
+flow add "Ship login page"            # -> 1   (pending)
+flow split 1 "Build form" "Wire auth" # parent parks; children 2,3 pending
+flow next --assignee me               # claim the next runnable task
+flow context 2                        # read its baton
+flow note 2 "using the shared form component"
+flow escalate 2 "OAuth or password?"  # park on a human; runner moves on
+flow reply 2 "OAuth"                  # (human) answer -> task wakes
+flow done 2 "form built with OAuth"   # rejected if deps unmet
+flow list
+```
+
+State lives in `.flow/flow.db`; human-readable batons are projected to `.flow/batons/`.
+
+Run the tests with `pytest`.

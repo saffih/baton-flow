@@ -147,6 +147,13 @@ The entire runner-facing API is small. This is the agnostic surface.
 
 Runners use **only** these. No direct database access, ever.
 
+Two verbs are **human/ops-facing**, not part of the runner loop:
+
+| Verb | Meaning |
+|------|---------|
+| `flow reply <id> <text>` | Answer a blocked task (§7). Records the reply on the baton and wakes the task; the runner decides on pickup whether it's about the task or new scope. |
+| `flow reopen <id>` | Move a `done` task back to `pending`. |
+
 ## 10. Extensibility (deferred, not built)
 
 The model stays this small because all future complexity hangs off one field and one
@@ -160,6 +167,10 @@ filter, never the loop:
   tasks. Work-stealing falls out for free. No contract change.
 - **Must-halt tasks** — a tag that makes the session wait on a specific task instead of
   parking it. Another field; add when needed.
+
+> **Current implementation note:** the runtime assumes a **single runner**. `flow next`
+> claims a task without a concurrency guard, so two runners could claim the same task.
+> Claim-safety for multiple sessions is deferred until routing lands.
 
 ## 11. Out of scope (deliberately stripped)
 
