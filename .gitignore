@@ -6,3 +6,11 @@ __pycache__/
 *.db
 *.db-wal
 *.db-shm
+.hldspec-anchor/
+.hldspec-run/
+
+# SpecKit scaffold — regenerable via `specify init --here --integration claude`.
+# Only the hand-authored constitution is tracked (force-added).
+/.claude/
+/CLAUDE.md
+/.specify/

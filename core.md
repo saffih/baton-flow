@@ -1,8 +1,8 @@
 # core.md — the runner loop
 
 This is the loop a **runner** executes. It is **agnostic**: it speaks only to the
-`flow` CLI and to text. It never assumes which AI is running it — Claude, Devin, and
-Codex all execute this same file; they differ only in how they are launched and handed
+`flow` CLI and to text. It never assumes which AI is running it —
+any runner executes this same file; runners differ only in how they are launched and handed
 this loop. Do not access the database directly. Use only the verbs below.
 
 ## Loop

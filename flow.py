@@ -32,7 +32,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     text       TEXT NOT NULL,
-    state      TEXT NOT NULL DEFAULT 'pending',
+    state      TEXT NOT NULL DEFAULT 'pending'
+                 CHECK(state IN ('pending','in_progress','blocked','done')),
     assignee   TEXT,
     type       TEXT,
     parent_id  INTEGER REFERENCES tasks(id),
@@ -175,7 +176,9 @@ def decide(conn, task_id, text):
 
 
 def escalate(conn, task_id, question):
-    _task(conn, task_id)
+    t = _task(conn, task_id)
+    if t["state"] == "done":
+        raise FlowError(f"task {task_id} is done; reopen it before escalating")
     conn.execute(
         "INSERT INTO escalations (task_id, question, created_at) VALUES (?,?,?)",
         (task_id, question, now()),
@@ -188,6 +191,10 @@ def escalate(conn, task_id, question):
 
 def split(conn, task_id, child_texts):
     parent = _task(conn, task_id)
+    if not child_texts:
+        raise FlowError("split requires at least one child task")
+    if parent["state"] == "done":
+        raise FlowError(f"task {task_id} is done; reopen it before splitting")
     child_ids = []
     for text in child_texts:
         cid = conn.execute(

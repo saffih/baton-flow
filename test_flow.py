@@ -1,5 +1,6 @@
 """Tests for the Baton Flow runtime: lifecycle, fork-join, escalation, reopen."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -150,6 +151,56 @@ def test_projection_writes_markdown(conn, tmp_path):
     assert "projected task" in md.read_text()
 
 
+# --- invariant guards (HLD-VERIFY negative tests) --------------------------
+
+
+def test_only_four_states():
+    # HLD-004: exactly four states exist.
+    assert flow.STATES == ("pending", "in_progress", "blocked", "done")
+
+
+def test_state_column_rejects_unknown_state(conn):
+    # HLD-004: the store itself must refuse a state outside the four.
+    tid = flow.add(conn, "task")
+    with pytest.raises(Exception):
+        conn.execute("UPDATE tasks SET state='zombie' WHERE id=?", (tid,))
+        conn.commit()
+
+
+def test_split_empty_children_rejected(conn):
+    # G1: splitting with no children would strand the parent blocked forever.
+    tid = flow.add(conn, "task")
+    with pytest.raises(flow.FlowError):
+        flow.split(conn, tid, [])
+    assert state(conn, tid) != "blocked"
+
+
+def test_cannot_escalate_done_task(conn):
+    # G3 / HLD-004: done -> blocked is not a legal transition.
+    tid = flow.add(conn, "task")
+    flow.done(conn, tid, "shipped")
+    with pytest.raises(flow.FlowError):
+        flow.escalate(conn, tid, "too late?")
+    assert state(conn, tid) == "done"
+
+
+def test_cannot_split_done_task(conn):
+    # G3 / HLD-004: done -> blocked is not a legal transition.
+    tid = flow.add(conn, "task")
+    flow.done(conn, tid, "shipped")
+    with pytest.raises(flow.FlowError):
+        flow.split(conn, tid, ["a"])
+    assert state(conn, tid) == "done"
+
+
+def test_next_skips_split_blocked_parent(conn):
+    # HLD-005: a split-blocked parent is not runnable until its children join.
+    parent = flow.add(conn, "big")
+    flow.split(conn, parent, ["a", "b"])
+    claimed = flow.next_task(conn, assignee="me")
+    assert claimed is None or claimed["id"] != parent
+
+
 # --- CLI smoke -------------------------------------------------------------
 
 
@@ -161,3 +212,60 @@ def test_cli_roundtrip(tmp_path, capsys):
     out = capsys.readouterr().out
     assert f"#{tid}" in out and "[in_progress]" in out
     assert flow.main(["--db", db, "done", tid, "finished"]) == 0
+
+
+# --- contract / structural invariants --------------------------------------
+
+
+def test_context_survives_markdown_deletion(conn, tmp_path):
+    # HLD-003 / HLD-008: SQLite is the source of truth; markdown is one-way.
+    # Deleting the projection must not lose data — context() reads the DB.
+    tid = flow.add(conn, "task")
+    flow.note(conn, tid, "important finding")
+    md = tmp_path / ".flow" / "batons" / f"{tid}.md"
+    if md.exists():
+        md.unlink()
+    t, entries = flow.context(conn, tid)
+    assert t["text"] == "task"
+    assert any(e["text"] == "important finding" for e in entries)
+
+
+def test_cli_exposes_only_contract_verbs():
+    # HLD-009: runners use only the listed verbs. The CLI surface is a stable
+    # contract — adding or removing a verb must be a deliberate, test-visible change.
+    src = Path(flow.__file__).read_text()
+    verbs = set(re.findall(r'add_parser\(\s*"([a-z]+)"', src))
+    assert verbs == {
+        "add", "next", "context", "note", "done",
+        "escalate", "split", "decide", "reply", "reopen", "list",
+    }
+
+
+def test_loop_contract_names_no_specific_ai():
+    # HLD-003: the loop (core.md) and runtime (flow.py) are agnostic — they
+    # name no specific AI. HLD.md may, in its tech notes; the contract files must not.
+    root = Path(flow.__file__).parent
+    blob = (root / "core.md").read_text().lower() + (root / "flow.py").read_text().lower()
+    for vendor in ("claude", "devin", "codex", "openai", "anthropic", "gpt", "gemini"):
+        assert vendor not in blob, f"agnostic contract names a specific AI: {vendor}"
+
+
+# --- the regression ratchet, self-enforcing --------------------------------
+
+
+def test_every_high_risk_invariant_has_a_test():
+    # Institutionalizes the sweep that caught the bugs: every HIGH-risk HLD
+    # section (each carries an HLD-VERIFY invariant) must be referenced by at
+    # least one test here. Add a HIGH-risk section to HLD.md and this goes red
+    # until you write its test.
+    hld = (Path(flow.__file__).parent / "HLD.md").read_text()
+    high, cur = [], None
+    for line in hld.splitlines():
+        m = re.match(r"^## (HLD-\d+)\b", line)
+        if m:
+            cur = m.group(1)
+        elif line.startswith("HLD-RISK: HIGH") and cur:
+            high.append(cur)
+    tests = Path(__file__).read_text()
+    missing = [a for a in high if a not in tests]
+    assert not missing, f"HIGH-risk HLD invariants with no test: {missing}"

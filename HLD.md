@@ -5,7 +5,14 @@
 
 ---
 
-## 1. What it is
+## HLD-001 - What it is
+
+HLD-ID: HLD-001
+HLD-ROLE: purpose
+HLD-STATUS: active
+HLD-RISK: MEDIUM
+HLD-SPECS: TBD
+HLD-RESOURCES: README.md,core.md
 
 Baton Flow keeps work continuous across AI-assisted sessions. You create tasks; a
 runner (an AI session, or you) picks one up, works it, and writes everything it
@@ -23,7 +30,14 @@ It exists to kill three specific pains:
 The baton solves all three: it *is* the durable context, it's readable at any moment,
 and you steer by replying to it.
 
-## 2. Vocabulary
+## HLD-002 - Vocabulary
+
+HLD-ID: HLD-002
+HLD-ROLE: reference
+HLD-STATUS: active
+HLD-RISK: LOW
+HLD-SPECS: TBD
+HLD-RESOURCES: core.md
 
 | Term | Meaning |
 |------|---------|
@@ -33,7 +47,15 @@ and you steer by replying to it.
 | **Handoff** | The act of passing: escalate to a human, spawn sub-tasks, or wake a parked task. |
 | **Decision** | A recorded choice, durable and inspectable. |
 
-## 3. Core model
+## HLD-003 - Core model
+
+HLD-ID: HLD-003
+HLD-ROLE: governance
+HLD-STATUS: active
+HLD-RISK: HIGH
+HLD-SPECS: constitution
+HLD-RESOURCES: flow.py,.flow/,.specify/memory/constitution.md
+HLD-VERIFY: SQLite is the only source of truth; markdown is a one-way projection, never an input; the loop depends only on the CLI + text and names no specific AI
 
 **Single source of truth.** A SQLite database holds all state. Markdown files are a
 **one-way projection** of the database for human reading — never an input. The
@@ -53,7 +75,15 @@ runner (any AI, or human)
 CLI verbs  ──►  SQLite (source of truth)  ──►  markdown projection (read-only view)
 ```
 
-## 4. The task lifecycle
+## HLD-004 - The task lifecycle
+
+HLD-ID: HLD-004
+HLD-ROLE: architecture
+HLD-STATUS: active
+HLD-RISK: HIGH
+HLD-SPECS: constitution
+HLD-RESOURCES: flow.py,test_flow.py
+HLD-VERIFY: only four states exist; a task cannot be done with unfinished children; done is reopenable; blocked wakes to pending only when all dependencies resolve
 
 Four states. `done` is a resting state, not a grave — it can be reopened.
 
@@ -74,7 +104,15 @@ pending ──► in_progress ──► done
 **The one rule that governs everything:** *a task is runnable only when it has no
 unmet dependencies.* A task cannot be `done` while it has unfinished children.
 
-## 5. The wait model (fork–join)
+## HLD-005 - The wait model (fork-join)
+
+HLD-ID: HLD-005
+HLD-ROLE: architecture
+HLD-STATUS: active
+HLD-RISK: HIGH
+HLD-SPECS: constitution
+HLD-RESOURCES: flow.py,test_flow.py
+HLD-VERIFY: escalate and split both park the task as blocked and free the runner; a task is runnable only when it has no unmet dependencies
 
 Escalation and sub-tasking are **the same primitive**: a task becomes `blocked`
 because it's waiting on something, and the runner immediately moves to the next
@@ -91,7 +129,14 @@ runner a *decision*, not an obligation: the work may now be moot (mark `done`), 
 more work, or be reopened. This is fork–join over a dependency graph — the same shape
 as `async/await` joins or a build-system DAG.
 
-## 6. Escalation triggers (runner → human)
+## HLD-006 - Escalation triggers (runner → human)
+
+HLD-ID: HLD-006
+HLD-ROLE: processing
+HLD-STATUS: active
+HLD-RISK: MEDIUM
+HLD-SPECS: TBD
+HLD-RESOURCES: core.md,flow.py
 
 The strength of the system is that a runner **stops and asks instead of guessing**. A
 runner must escalate when:
@@ -103,7 +148,14 @@ runner must escalate when:
 
 Any trigger → `flow escalate`, task → `blocked`, runner moves on.
 
-## 7. Human-in-the-loop (human → runner)
+## HLD-007 - Human-in-the-loop (human → runner)
+
+HLD-ID: HLD-007
+HLD-ROLE: processing
+HLD-STATUS: active
+HLD-RISK: MEDIUM
+HLD-SPECS: TBD
+HLD-RESOURCES: flow.py,core.md
 
 When the human answers a blocked task, one binary question decides what happens:
 
@@ -114,7 +166,15 @@ When the human answers a blocked task, one binary question decides what happens:
 
 This keeps steering lossless and never silently merges unrelated scope into a task.
 
-## 8. The baton (per-task document)
+## HLD-008 - The baton (per-task document)
+
+HLD-ID: HLD-008
+HLD-ROLE: architecture
+HLD-STATUS: active
+HLD-RISK: HIGH
+HLD-SPECS: constitution
+HLD-RESOURCES: flow.py,.flow/batons/
+HLD-VERIFY: the baton lives in the database and is read via the CLI; markdown batons are a one-way projection; declared context is the only context the contract touches
 
 The baton is a **blackboard**: a shared surface that multiple knowledge sources —
 the runner, its sub-tasks, and the human — all read and write. It is the artifact that
@@ -130,7 +190,15 @@ A runner MUST read a task's baton (`flow context <id>`) before working it, and a
 progress as it goes (`flow note`). Batons are read from the database via CLI, never
 from markdown files directly.
 
-## 9. The CLI contract
+## HLD-009 - The CLI contract
+
+HLD-ID: HLD-009
+HLD-ROLE: api
+HLD-STATUS: active
+HLD-RISK: HIGH
+HLD-SPECS: constitution
+HLD-RESOURCES: flow.py,flow,core.md
+HLD-VERIFY: runners use only the listed verbs; no direct database access; reply and reopen are human/ops-facing and not part of the runner loop
 
 The entire runner-facing API is small. This is the agnostic surface.
 
@@ -154,7 +222,14 @@ Two verbs are **human/ops-facing**, not part of the runner loop:
 | `flow reply <id> <text>` | Answer a blocked task (§7). Records the reply on the baton and wakes the task; the runner decides on pickup whether it's about the task or new scope. |
 | `flow reopen <id>` | Move a `done` task back to `pending`. |
 
-## 10. Extensibility (deferred, not built)
+## HLD-010 - Extensibility (deferred, not built)
+
+HLD-ID: HLD-010
+HLD-ROLE: architecture
+HLD-STATUS: planned
+HLD-RISK: LOW
+HLD-SPECS: TBD
+HLD-RESOURCES: TBD
 
 The model stays this small because all future complexity hangs off one field and one
 filter, never the loop:
@@ -172,7 +247,14 @@ filter, never the loop:
 > claims a task without a concurrency guard, so two runners could claim the same task.
 > Claim-safety for multiple sessions is deferred until routing lands.
 
-## 11. Out of scope (deliberately stripped)
+## HLD-011 - Out of scope (deliberately stripped)
+
+HLD-ID: HLD-011
+HLD-ROLE: governance
+HLD-STATUS: active
+HLD-RISK: LOW
+HLD-SPECS: TBD
+HLD-RESOURCES: TBD
 
 The prior design accreted operational machinery that is **not** part of this system:
 Unix-socket task delivery, connection pools, health-monitoring daemons, automatic
@@ -180,7 +262,14 @@ failover, the web UI / HTTP API, environment staging, and migration tooling. The
 excluded on purpose to keep the contract small and the implementation a few files.
 Re-introduce only with a documented reason.
 
-## 12. Technology
+## HLD-012 - Technology
+
+HLD-ID: HLD-012
+HLD-ROLE: operations
+HLD-STATUS: active
+HLD-RISK: LOW
+HLD-SPECS: TBD
+HLD-RESOURCES: flow.py
 
 - **Language**: Python 3.10+
 - **State**: SQLite (WAL mode), single source of truth.
