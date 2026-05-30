@@ -14,7 +14,7 @@ HLDspec's `anchor_coverage` vocabulary. Generated during the HLDspec dogfood run
 | HLD-013 Concurrency/durability | **implemented (this slice)** | WAL+busy_timeout+synchronous; atomic claim; one-tx-per-op; concurrent-claim test |
 | HLD-006 Escalation triggers | partial — by design | `escalate()` exists; triggers are runner judgment (`core.md`), not mechanizable |
 | HLD-007 Human-in-the-loop | partial — by design | `reply()` exists; the "about this task?" branch is runner judgment |
-| HLD-014 Recovery | deferred | `STATUS: planned`; its own future slice once 013 is proven |
+| HLD-014 Recovery | **implemented (this slice)** | STATUS active, HIGH; lease/reclaim/escalate + ownership fence; 10 tests + CLI alias guard; migration adds `reclaim_count` |
 | HLD-001/002/011/012 | not applicable | purpose / vocabulary / out-of-scope / technology — no code artifact |
 
 **Partial-by-design** is distinct from unfinished: HLD-006/007 are deliberately

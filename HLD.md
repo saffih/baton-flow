@@ -308,20 +308,31 @@ rides on it.
 The markdown projection is written *after* the transaction commits; it is a re-derivable
 view, never part of a transaction.
 
-## HLD-014 - Orphaned-work recovery (planned, not built)
+## HLD-014 - Orphaned-work recovery (lease, reclaim, fence)
 
 HLD-ID: HLD-014
 HLD-ROLE: architecture
-HLD-STATUS: planned
-HLD-RISK: LOW
-HLD-SPECS: TBD
-HLD-RESOURCES: TBD
+HLD-STATUS: active
+HLD-RISK: HIGH
+HLD-SPECS: constitution
+HLD-RESOURCES: flow.py,test_flow.py
+HLD-VERIFY: a task whose session has been silent past the lease TTL is reclaimed to pending — in_progress only, never blocked — recording the reason and incrementing reclaim_count; after a reclaim threshold it is escalated instead of requeued; done/escalate/split by a session that no longer holds a session-owned task are rejected; note/decide/reply stay multi-writer; reclaim runs under the claim's BEGIN IMMEDIATE
 
 A session can claim a task and then vanish, leaving it stuck `in_progress` forever.
-Recovery — a **liveness** concern, separate from the correctness HLD-013 guarantees — will
-detect a claim whose session has gone silent, return the task to `pending` for another
-session, and **escalate** it after repeated reclaim (reusing the escalation primitive).
-Ownership-implying transitions (`done`, `escalate`, `split`) will verify the caller still
-holds the task; blackboard writes (`note`, `decide`, `reply`) stay multi-writer with
-attribution, per the baton model (HLD-008). Deferred until the protected base (HLD-013) is
-proven, then built as its own slice.
+Recovery is a **liveness** concern, separate from the correctness HLD-013 guarantees.
+
+- **Lease.** A claim's `updated_at` is its lease stamp; any progress (`note`, `decide`)
+  refreshes it. A task `in_progress` past a generous `LEASE_TTL` is *orphaned*. There is
+  no heartbeat obligation — silence alone, not a missing ping, defines an orphan.
+- **Reclaim — lazy, no daemon.** Inside `flow next` (before selecting), an orphaned task
+  returns to `pending`, appends `reclaimed: session X silent since T`, and bumps a new
+  `reclaim_count`. Only `in_progress` is reclaimed; `blocked` is parked by design. Reclaim
+  happens under the same `BEGIN IMMEDIATE` as the claim, so it cannot race.
+- **Escalate-on-repeat.** After `RECLAIM_MAX` reclaims, the task escalates instead of
+  requeuing — reusing the escalation primitive (HLD-006 repeated failure).
+- **Fence — ownership-implying transitions only.** When a task is held by a named session,
+  `done` / `escalate` / `split` must carry that session or are rejected (`you no longer
+  hold task N`). Tasks claimed with no session (the legacy path, HLD-010) stay unfenced, so
+  `flow next` without a session behaves exactly as today.
+- **Blackboard stays multi-writer.** `note` / `decide` / `reply` are never fenced; they get
+  attribution, per the baton model (HLD-008). Fencing them would break the blackboard.

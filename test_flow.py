@@ -1,11 +1,18 @@
 """Tests for the Baton Flow runtime: lifecycle, fork-join, escalation, reopen."""
 
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 import flow
+
+
+def _age(conn, task_id, seconds):
+    """Backdate a task's lease stamp so it looks silent (HLD-014 test helper)."""
+    old = (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat(timespec="seconds")
+    conn.execute("UPDATE tasks SET updated_at=? WHERE id=?", (old, task_id))
 
 
 @pytest.fixture
@@ -349,3 +356,115 @@ def test_session_falls_back_when_label_dry(conn):  # HLD-010
     flow.next_task(conn, assignee="bob")  # claims db1, binds bob -> db
     t = flow.next_task(conn, assignee="bob")  # db dry -> fall back, don't idle
     assert t is not None and t["id"] == b
+
+
+# --- HLD-014 orphaned-work recovery (lease, reclaim, fence) -----------------
+
+
+def test_migration_adds_columns_to_old_db(tmp_path):  # HLD-013 / HLD-014
+    # An old DB predating the `label` and `reclaim_count` columns must be upgraded;
+    # CREATE TABLE IF NOT EXISTS will not add a column to an existing table.
+    import sqlite3
+
+    db = tmp_path / ".flow" / "old.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    raw = sqlite3.connect(db)
+    raw.executescript(
+        "CREATE TABLE tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL,"
+        " state TEXT NOT NULL DEFAULT 'pending', assignee TEXT, type TEXT,"
+        " parent_id INTEGER, outcome TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);"
+    )
+    raw.commit()
+    raw.close()
+    c = flow.connect(db)
+    cols = {r["name"] for r in c.execute("PRAGMA table_info(tasks)").fetchall()}
+    assert "label" in cols and "reclaim_count" in cols
+    c.close()
+
+
+def test_orphaned_task_reclaimed(conn):  # HLD-014
+    tid = flow.add(conn, "work")
+    flow.next_task(conn, assignee="alice")        # alice claims
+    _age(conn, tid, flow.LEASE_TTL + 10)          # alice goes silent
+    t = flow.next_task(conn, assignee="bob")      # bob reclaims, then claims
+    assert t["id"] == tid and t["assignee"] == "bob"
+    assert flow._task(conn, tid)["reclaim_count"] == 1
+    _, entries = flow.context(conn, tid)
+    assert any("reclaimed" in e["text"] for e in entries)
+
+
+def test_fresh_claim_not_reclaimed(conn):  # HLD-014
+    tid = flow.add(conn, "work")
+    flow.next_task(conn, assignee="alice")        # fresh claim, within TTL
+    assert flow.next_task(conn, assignee="bob") is None
+    assert flow._task(conn, tid)["assignee"] == "alice"
+
+
+def test_blocked_task_never_reclaimed(conn):  # HLD-014
+    tid = flow.add(conn, "work")
+    flow.next_task(conn, assignee="alice")
+    flow.escalate(conn, tid, "stuck", session="alice")  # owner parks it -> blocked
+    _age(conn, tid, flow.LEASE_TTL + 10)
+    assert flow.next_task(conn, assignee="bob") is None
+    assert state(conn, tid) == "blocked"
+
+
+def test_progress_refreshes_lease(conn):  # HLD-014
+    tid = flow.add(conn, "work")
+    flow.next_task(conn, assignee="alice")
+    _age(conn, tid, flow.LEASE_TTL + 10)
+    flow.note(conn, tid, "still working")         # refreshes the lease
+    assert flow.next_task(conn, assignee="bob") is None
+    assert flow._task(conn, tid)["assignee"] == "alice"
+
+
+def test_stale_owner_cannot_done(conn):  # HLD-014
+    tid = flow.add(conn, "work")
+    flow.next_task(conn, assignee="alice")
+    _age(conn, tid, flow.LEASE_TTL + 10)
+    flow.next_task(conn, assignee="bob")          # reclaimed to bob
+    with pytest.raises(flow.FlowError):
+        flow.done(conn, tid, "alice finishing", session="alice")
+    assert state(conn, tid) == "in_progress"      # still bob's, not completed
+
+
+def test_owner_can_complete(conn):  # HLD-014
+    tid = flow.add(conn, "work")
+    flow.next_task(conn, assignee="alice")
+    flow.done(conn, tid, "ok", session="alice")
+    assert state(conn, tid) == "done"
+
+
+def test_blackboard_not_fenced(conn):  # HLD-014
+    tid = flow.add(conn, "work")
+    flow.next_task(conn, assignee="alice")        # owner is alice
+    flow.note(conn, tid, "observation from elsewhere")   # no session param: always allowed
+    flow.decide(conn, tid, "a recorded call")
+    _, entries = flow.context(conn, tid)
+    kinds = {e["kind"] for e in entries}
+    assert "note" in kinds and "decision" in kinds
+
+
+def test_no_session_task_unfenced(conn):  # HLD-014
+    tid = flow.add(conn, "work")
+    flow.next_task(conn)                          # claimed with NO session (legacy)
+    flow.done(conn, tid, "done via legacy path")  # no --session -> unfenced
+    assert state(conn, tid) == "done"
+
+
+def test_repeated_reclaim_escalates(conn):  # HLD-014
+    tid = flow.add(conn, "poison")
+    for _ in range(flow.RECLAIM_MAX + 1):
+        flow.next_task(conn, assignee="runner")   # claim
+        _age(conn, tid, flow.LEASE_TTL + 10)      # then go silent
+    assert flow.next_task(conn, assignee="runner2") is None  # escalated, not requeued
+    assert state(conn, tid) == "blocked"
+
+
+def test_cli_done_accepts_assignee_form(tmp_path):  # HLD-014
+    # core.md prescribes `--assignee <me>` on done/escalate/split; the CLI must accept it
+    # (the fence verbs are the point of HLD-014 — they must not error for a compliant runner).
+    db = str(tmp_path / "flow.db")
+    assert flow.main(["--db", db, "add", "ship"]) == 0
+    assert flow.main(["--db", db, "next", "--assignee", "me"]) == 0
+    assert flow.main(["--db", db, "done", "1", "shipped", "--assignee", "me"]) == 0

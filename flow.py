@@ -17,10 +17,17 @@ import argparse
 import sqlite3
 import sys
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 STATES = ("pending", "in_progress", "blocked", "done")
+
+# HLD-014: a task in_progress with no progress past this many seconds is orphaned.
+# Generous on purpose — a false reclaim is bounded by the fence (a stale owner's
+# done/escalate/split is rejected), so the cost of waiting is low.
+LEASE_TTL = 3600
+# After this many reclaims a task is escalated to a human instead of requeued.
+RECLAIM_MAX = 3
 
 
 def now() -> str:
@@ -39,9 +46,11 @@ CREATE TABLE IF NOT EXISTS tasks (
     label      TEXT,
     parent_id  INTEGER REFERENCES tasks(id),
     outcome    TEXT,
+    reclaim_count INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_tasks_state_updated ON tasks(state, updated_at);
 CREATE TABLE IF NOT EXISTS baton_entries (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     task_id    INTEGER NOT NULL REFERENCES tasks(id),
@@ -82,7 +91,21 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
+
+
+def _migrate(conn):
+    """Add columns introduced after a database was first created.
+
+    CREATE TABLE IF NOT EXISTS never alters an existing table, so a DB made by an
+    earlier version is missing newer columns. Add them idempotently.
+    """
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+    if "label" not in cols:  # renamed from the old `type` column
+        conn.execute("ALTER TABLE tasks ADD COLUMN label TEXT")
+    if "reclaim_count" not in cols:  # HLD-014
+        conn.execute("ALTER TABLE tasks ADD COLUMN reclaim_count INTEGER NOT NULL DEFAULT 0")
 
 
 @contextmanager
@@ -130,6 +153,11 @@ def _set_state(conn, task_id, state):
     )
 
 
+def _touch(conn, task_id):
+    """Refresh a task's lease stamp (HLD-014) without changing its state."""
+    conn.execute("UPDATE tasks SET updated_at=? WHERE id=?", (now(), task_id))
+
+
 def _is_blocked(conn, task_id) -> bool:
     open_esc = conn.execute(
         "SELECT 1 FROM escalations WHERE task_id=? AND answer IS NULL LIMIT 1",
@@ -141,6 +169,56 @@ def _is_blocked(conn, task_id) -> bool:
         "SELECT 1 FROM tasks WHERE parent_id=? AND state!='done' LIMIT 1", (task_id,)
     ).fetchone()
     return open_child is not None
+
+
+def _reclaim_orphans(conn):
+    """Return tasks whose holding session has gone silent past the lease (HLD-014).
+
+    Runs inside next_task's transaction, before the queue is read, so reclaim and the
+    subsequent claim share one BEGIN IMMEDIATE and cannot race. Only in_progress tasks
+    are reclaimed; blocked tasks are parked by design. After RECLAIM_MAX reclaims a task
+    is escalated to a human instead of being requeued forever. Returns the ids it touched
+    so the caller can refresh their projections after the transaction commits.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=LEASE_TTL)).isoformat(timespec="seconds")
+    rows = conn.execute(
+        "SELECT id, assignee, updated_at, reclaim_count FROM tasks"
+        " WHERE state='in_progress' AND updated_at < ?",
+        (cutoff,),
+    ).fetchall()
+    touched = []
+    for r in rows:
+        tid = r["id"]
+        if r["reclaim_count"] + 1 > RECLAIM_MAX:
+            conn.execute(
+                "INSERT INTO escalations (task_id, question, created_at) VALUES (?,?,?)",
+                (tid, f"orphaned {r['reclaim_count']}x; escalating to a human", now()),
+            )
+            _append(conn, tid, "escalation", f"reclaimed {r['reclaim_count']}x without completion; escalated")
+            _set_state(conn, tid, "blocked")
+        else:
+            conn.execute(
+                "UPDATE tasks SET state='pending', assignee=NULL,"
+                " reclaim_count=reclaim_count+1, updated_at=? WHERE id=?",
+                (now(), tid),
+            )
+            _append(conn, tid, "system", f"reclaimed: session {r['assignee']} silent since {r['updated_at']}")
+        touched.append(tid)
+    return touched
+
+
+def _require_owner(conn, task_id, session):
+    """Fence an ownership-implying transition (HLD-014).
+
+    A named session may only done/escalate/split a task it still holds. An
+    unidentified caller (session is None — the legacy/ops path, HLD-010) is unfenced,
+    and a task with no session owner is unfenced. Blackboard writes never call this.
+    """
+    if session is None:
+        return
+    owner = _task(conn, task_id)["assignee"]
+    if owner is not None and owner != session:
+        raise FlowError(f"you no longer hold task {task_id} (held by {owner})")
 
 
 def _maybe_wake(conn, task_id):
@@ -174,6 +252,7 @@ def next_task(conn, assignee=None):
     """
     tid = None
     with _tx(conn):
+        reclaimed = _reclaim_orphans(conn)  # HLD-014: return silent sessions' tasks first
         bound = None
         if assignee:
             r = conn.execute(
@@ -204,6 +283,9 @@ def next_task(conn, assignee=None):
                 "UPDATE tasks SET state='in_progress', assignee=?, updated_at=? WHERE id=?",
                 (assignee, now(), tid),
             )
+    for rid in reclaimed:  # refresh projections for tasks reclaimed/escalated above
+        if rid != tid:
+            project(conn, rid)
     if tid is None:
         return None
     project(conn, tid)
@@ -223,6 +305,7 @@ def note(conn, task_id, text):
     with _tx(conn):
         _task(conn, task_id)
         _append(conn, task_id, "note", text)
+        _touch(conn, task_id)  # HLD-014: runner progress refreshes the lease
     project(conn, task_id)
 
 
@@ -230,11 +313,13 @@ def decide(conn, task_id, text):
     with _tx(conn):
         _task(conn, task_id)
         _append(conn, task_id, "decision", text)
+        _touch(conn, task_id)  # HLD-014: runner progress refreshes the lease
     project(conn, task_id)
 
 
-def escalate(conn, task_id, question):
+def escalate(conn, task_id, question, session=None):
     with _tx(conn):
+        _require_owner(conn, task_id, session)
         t = _task(conn, task_id)
         if t["state"] == "done":
             raise FlowError(f"task {task_id} is done; reopen it before escalating")
@@ -247,11 +332,12 @@ def escalate(conn, task_id, question):
     project(conn, task_id)
 
 
-def split(conn, task_id, child_texts):
+def split(conn, task_id, child_texts, session=None):
     if not child_texts:
         raise FlowError("split requires at least one child task")
     child_ids = []
     with _tx(conn):
+        _require_owner(conn, task_id, session)
         parent = _task(conn, task_id)
         if parent["state"] == "done":
             raise FlowError(f"task {task_id} is done; reopen it before splitting")
@@ -271,9 +357,10 @@ def split(conn, task_id, child_texts):
     return child_ids
 
 
-def done(conn, task_id, outcome):
+def done(conn, task_id, outcome, session=None):
     parent_id = None
     with _tx(conn):
+        _require_owner(conn, task_id, session)
         _task(conn, task_id)
         if _is_blocked(conn, task_id):
             raise FlowError(
@@ -389,14 +476,17 @@ def main(argv=None, db_path=None):
     p = sub.add_parser("done", help="complete a task")
     p.add_argument("id", type=int)
     p.add_argument("outcome")
+    p.add_argument("--session", "--assignee", dest="session")
 
     p = sub.add_parser("escalate", help="park a task waiting on a human")
     p.add_argument("id", type=int)
     p.add_argument("question")
+    p.add_argument("--session", "--assignee", dest="session")
 
     p = sub.add_parser("split", help="spawn children; park the parent")
     p.add_argument("id", type=int)
     p.add_argument("children", nargs="+")
+    p.add_argument("--session", "--assignee", dest="session")
 
     p = sub.add_parser("decide", help="record a decision")
     p.add_argument("id", type=int)
@@ -439,11 +529,11 @@ def _dispatch(conn, args):
     elif args.cmd == "note":
         note(conn, args.id, args.text)
     elif args.cmd == "done":
-        done(conn, args.id, args.outcome)
+        done(conn, args.id, args.outcome, session=args.session)
     elif args.cmd == "escalate":
-        escalate(conn, args.id, args.question)
+        escalate(conn, args.id, args.question, session=args.session)
     elif args.cmd == "split":
-        print(split(conn, args.id, args.children))
+        print(split(conn, args.id, args.children, session=args.session))
     elif args.cmd == "decide":
         decide(conn, args.id, args.text)
     elif args.cmd == "reply":

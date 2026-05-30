@@ -22,11 +22,11 @@ Repeat forever:
    - **Irreversibility** — delete / deploy / external send / money → `flow escalate`
      to confirm first.
    - **Repeated failure** — ~3 tries, still failing → `flow escalate`, don't thrash.
-   - **Too big to do now** — `flow split <id> "<child A>" "<child B>" …`. The parent
-     parks until the children finish.
+   - **Too big to do now** — `flow split <id> "<child A>" "<child B>" … --assignee <me>`.
+     The parent parks until the children finish.
    After any handoff the task is `blocked`; go back to step 1.
-5. **Finish** — `flow done <id> "<outcome>"`. (Rejected if the task still has unmet
-   dependencies; resolve or hand off first.)
+5. **Finish** — `flow done <id> "<outcome>" --assignee <me>`. (Rejected if the task still
+   has unmet dependencies; resolve or hand off first.)
 
 ## On a woken task (a reply arrived, or children finished)
 
@@ -41,6 +41,9 @@ Waking is a decision, not an obligation.
 ## Rules
 
 - Use **only** these verbs; never touch the database.
+- Always pass the same `--assignee <me>` you claimed with on `escalate`, `split`, and
+  `done`. If you went silent and your task was reclaimed by another session, these verbs
+  are refused — you no longer hold it (HLD-014). Re-claim with `flow next` instead.
 - Never guess past a handoff trigger — escalate.
 - Communicate every meaningful step on the baton; it is the only context the next
   runner inherits.
