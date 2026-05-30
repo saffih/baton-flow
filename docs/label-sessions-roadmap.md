@@ -68,3 +68,16 @@ Fixed constraints:
 - Reclaim runs atomically under the claim's `BEGIN IMMEDIATE`; TTL generous. (CH:IV)
 - Index `(state, updated_at)` for the per-`next` sweep. (CH:SR)
 - Safety dominates; narrow exception: reclaim only after clear silence.
+
+## Fix-first list (before HLD-014) — from RunSkeptic on shipped 010/013
+
+1. **Migration:** `ALTER TABLE tasks ADD COLUMN label` if missing — `type`->`label`
+   rename breaks pre-existing DBs (CREATE IF NOT EXISTS won't add it). Tests miss it
+   (fresh DBs). Add a test that opens an old-schema DB. (PO:SI/CH:SO)
+2. **Prove the race test red->green:** revert `next_task` to non-atomic SELECT-then-UPDATE,
+   confirm `test_concurrent_next_claims_each_task_once` goes RED, then restore. It was
+   never observed red, so it's currently unproven. (PO:WR/FE:WE)
+3. **Wrap lock errors:** catch `sqlite3.OperationalError` in `main()` (contention beyond
+   busy_timeout currently escapes as a raw traceback). Surface as clean exit 1. (CH:SM)
+4. **HLD-013 wording:** durability is NORMAL-level — last commit may be lost on power
+   loss; no torn state. (PO:OC)
