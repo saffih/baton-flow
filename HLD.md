@@ -322,14 +322,16 @@ A session can claim a task and then vanish, leaving it stuck `in_progress` forev
 Recovery is a **liveness** concern, separate from the correctness HLD-013 guarantees.
 
 - **Lease.** A claim's `updated_at` is its lease stamp; any progress (`note`, `decide`)
-  refreshes it. A task `in_progress` past a generous `LEASE_TTL` is *orphaned*. There is
-  no heartbeat obligation — silence alone, not a missing ping, defines an orphan.
+  refreshes it. A task `in_progress` past `LEASE_TTL` (a generous default of **1 hour**)
+  is *orphaned*. There is no heartbeat obligation — silence alone, not a missing ping,
+  defines an orphan.
 - **Reclaim — lazy, no daemon.** Inside `flow next` (before selecting), an orphaned task
-  returns to `pending`, appends `reclaimed: session X silent since T`, and bumps a new
-  `reclaim_count`. Only `in_progress` is reclaimed; `blocked` is parked by design. Reclaim
-  happens under the same `BEGIN IMMEDIATE` as the claim, so it cannot race.
-- **Escalate-on-repeat.** After `RECLAIM_MAX` reclaims, the task escalates instead of
-  requeuing — reusing the escalation primitive (HLD-006 repeated failure).
+  returns to `pending`, **clears its `assignee`** (the vanished session no longer holds
+  it), appends `reclaimed: session X silent since T`, and bumps a new `reclaim_count`.
+  Only `in_progress` is reclaimed; `blocked` is parked by design. Reclaim happens under
+  the same `BEGIN IMMEDIATE` as the claim, so it cannot race.
+- **Escalate-on-repeat.** After `RECLAIM_MAX` reclaims (default **3**), the task escalates
+  instead of requeuing — reusing the escalation primitive (HLD-006 repeated failure).
 - **Fence — ownership-implying transitions only.** When a task is held by a named session,
   `done` / `escalate` / `split` must carry that session or are rejected (`you no longer
   hold task N`). Tasks claimed with no session (the legacy path, HLD-010) stay unfenced, so
