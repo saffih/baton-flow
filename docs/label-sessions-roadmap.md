@@ -52,3 +52,19 @@ task then vanish, stranding it `in_progress` forever.
 Build Slice 1 (HLD-014) next — it's the protection-completing liveness layer and the
 only HIGH-risk item. Slices 2–3 are pull-based: add when observability or capability
 routing is actually needed, not speculatively.
+
+## HLD-014 — RunSkeptic revisions (settle before coding)
+
+Two gating decisions:
+- **Heartbeat:** lease = silence since last `note`, NOT session liveness. Decide:
+  require runners to `note` as a heartbeat, or accept quiet-reclaim as a documented
+  tradeoff. (FE:ME)
+- **Fence enforcement (CONFLICT):** require `--session` on `done`/`escalate`/`split`
+  (safe, breaks single-runner back-compat) vs optional-but-fence-only-when-present
+  (compatible, has a bypass hole). (KT:IR/SH:HC)
+
+Fixed constraints:
+- Reclaim targets `in_progress` ONLY — `blocked` is parked by design, not orphaned. (PO:CN)
+- Reclaim runs atomically under the claim's `BEGIN IMMEDIATE`; TTL generous. (CH:IV)
+- Index `(state, updated_at)` for the per-`next` sweep. (CH:SR)
+- Safety dominates; narrow exception: reclaim only after clear silence.
