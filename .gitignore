@@ -14,3 +14,7 @@ __pycache__/
 /.claude/
 /CLAUDE.md
 /.specify/
+
+# HLDspec dogfood workspace (regenerable)
+.hldspec-first-run/
+.hldspec-ready-gate/

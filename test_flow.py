@@ -119,10 +119,10 @@ def test_parent_cannot_be_done_with_open_children(conn):
         flow.done(conn, parent, "premature")
 
 
-def test_children_inherit_assignee(conn):
-    parent = flow.add(conn, "big", assignee="alice")
+def test_children_inherit_label(conn):  # HLD-010
+    parent = flow.add(conn, "big", label="db")
     a, = flow.split(conn, parent, ["a"])
-    assert flow._task(conn, a)["assignee"] == "alice"
+    assert flow._task(conn, a)["label"] == "db"
 
 
 # --- reopen ----------------------------------------------------------------
@@ -269,3 +269,83 @@ def test_every_high_risk_invariant_has_a_test():
     tests = Path(__file__).read_text()
     missing = [a for a in high if a not in tests]
     assert not missing, f"HIGH-risk HLD invariants with no test: {missing}"
+
+
+# --- HLD-013 concurrency and durability ------------------------------------
+
+
+def test_connection_hardening(tmp_path):  # HLD-013
+    c = flow.connect(tmp_path / "h.db")
+    assert c.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+    assert c.execute("PRAGMA busy_timeout").fetchone()[0] >= 1000
+    assert c.execute("PRAGMA synchronous").fetchone()[0] == 1  # NORMAL
+    c.close()
+
+
+def test_concurrent_next_claims_each_task_once(tmp_path):  # HLD-013
+    import threading
+
+    db = tmp_path / "c.db"
+    c0 = flow.connect(db)
+    for i in range(30):
+        flow.add(c0, f"t{i}")
+    c0.close()
+
+    claimed = []
+    lock = threading.Lock()
+
+    def worker():
+        c = flow.connect(db)
+        while True:
+            t = flow.next_task(c, assignee=None)
+            if t is None:
+                break
+            with lock:
+                claimed.append(t["id"])
+        c.close()
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(claimed) == 30                    # none dropped
+    assert sorted(claimed) == sorted(set(claimed))  # none claimed twice
+
+
+def test_done_wakes_parent_atomically(conn):  # HLD-013
+    parent = flow.add(conn, "parent")
+    a, = flow.split(conn, parent, ["child"])
+    assert state(conn, parent) == "blocked"
+    flow.done(conn, a, "child done")
+    # one transaction: child done AND parent woken, never half-applied
+    assert state(conn, a) == "done"
+    assert state(conn, parent) == "pending"
+
+
+# --- HLD-010 work routing (soft affinity) ----------------------------------
+
+
+def test_next_without_session_unchanged(conn):  # HLD-010
+    a = flow.add(conn, "first", label="x")
+    flow.add(conn, "second")
+    t = flow.next_task(conn)  # no session: oldest pending regardless of label
+    assert t["id"] == a and t["assignee"] is None
+
+
+def test_session_binds_then_prefers_its_label(conn):  # HLD-010
+    flow.add(conn, "db1", label="db")
+    flow.add(conn, "web1", label="web")
+    flow.add(conn, "db2", label="db")
+    first = flow.next_task(conn, assignee="alice")   # binds alice -> first label
+    second = flow.next_task(conn, assignee="alice")  # prefers same label
+    assert second["label"] == first["label"]
+
+
+def test_session_falls_back_when_label_dry(conn):  # HLD-010
+    flow.add(conn, "db1", label="db")
+    b = flow.add(conn, "web1", label="web")
+    flow.next_task(conn, assignee="bob")  # claims db1, binds bob -> db
+    t = flow.next_task(conn, assignee="bob")  # db dry -> fall back, don't idle
+    assert t is not None and t["id"] == b

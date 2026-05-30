@@ -16,6 +16,7 @@ A task is runnable only when it has no unmet dependencies:
 import argparse
 import sqlite3
 import sys
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,7 +36,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     state      TEXT NOT NULL DEFAULT 'pending'
                  CHECK(state IN ('pending','in_progress','blocked','done')),
     assignee   TEXT,
-    type       TEXT,
+    label      TEXT,
     parent_id  INTEGER REFERENCES tasks(id),
     outcome    TEXT,
     created_at TEXT NOT NULL,
@@ -56,17 +57,50 @@ CREATE TABLE IF NOT EXISTS escalations (
     created_at  TEXT NOT NULL,
     answered_at TEXT
 );
+CREATE TABLE IF NOT EXISTS sessions (
+    name        TEXT PRIMARY KEY,
+    bound_label TEXT,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
 """
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
+    """Open the database with durable, concurrency-safe settings (HLD-013).
+
+    WAL allows concurrent readers; busy_timeout makes a competing writer wait
+    instead of failing with "database is locked"; synchronous=NORMAL is the right
+    durability/speed point under WAL. isolation_level=None hands transaction
+    control to us so each operation is one explicit BEGIN IMMEDIATE..COMMIT.
+    """
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
     return conn
+
+
+@contextmanager
+def _tx(conn):
+    """One operation = one all-or-nothing transaction (HLD-013).
+
+    BEGIN IMMEDIATE takes the write lock up front, so a read-then-write (the claim
+    in next_task) cannot race another writer. A crash mid-operation leaves no
+    partial state: either everything commits or it all rolls back.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    else:
+        conn.execute("COMMIT")
 
 
 # --- core operations -------------------------------------------------------
@@ -117,39 +151,63 @@ def _maybe_wake(conn, task_id):
         _append(conn, task_id, "system", "woken: all dependencies resolved")
 
 
-def add(conn, text, assignee=None, type=None, parent_id=None):
-    cur = conn.execute(
-        "INSERT INTO tasks (text, state, assignee, type, parent_id, created_at, updated_at)"
-        " VALUES (?, 'pending', ?, ?, ?, ?, ?)",
-        (text, assignee, type, parent_id, now(), now()),
-    )
-    task_id = cur.lastrowid
-    _append(conn, task_id, "system", f"created: {text}")
-    conn.commit()
+def add(conn, text, label=None, parent_id=None):
+    with _tx(conn):
+        cur = conn.execute(
+            "INSERT INTO tasks (text, state, label, parent_id, created_at, updated_at)"
+            " VALUES (?, 'pending', ?, ?, ?, ?)",
+            (text, label, parent_id, now(), now()),
+        )
+        task_id = cur.lastrowid
+        _append(conn, task_id, "system", f"created: {text}")
     project(conn, task_id)
     return task_id
 
 
 def next_task(conn, assignee=None):
-    """Claim the oldest runnable task. Unassigned tasks are a shared pool."""
-    if assignee:
-        row = conn.execute(
-            "SELECT * FROM tasks WHERE state='pending' AND (assignee=? OR assignee IS NULL)"
-            " ORDER BY id LIMIT 1",
-            (assignee,),
-        ).fetchone()
-    else:
-        row = conn.execute(
-            "SELECT * FROM tasks WHERE state='pending' ORDER BY id LIMIT 1"
-        ).fetchone()
-    if row is None:
+    """Claim the oldest runnable task (HLD-010 routing, HLD-013 atomic claim).
+
+    A named runner (`assignee`) is a session: it prefers work of its bound label,
+    binds to the label of the first labeled task it takes, and falls back to any
+    runnable task rather than idle. Claiming happens under a write lock taken
+    before the SELECT, so two sessions can never both hold one task.
+    """
+    tid = None
+    with _tx(conn):
+        bound = None
+        if assignee:
+            r = conn.execute(
+                "SELECT bound_label FROM sessions WHERE name=?", (assignee,)
+            ).fetchone()
+            bound = r["bound_label"] if r else None
+        row = None
+        if bound is not None:
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE state='pending' AND label=? ORDER BY id LIMIT 1",
+                (bound,),
+            ).fetchone()
+        if row is None:  # unbound, or bound label is dry -> fall back to any
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE state='pending' ORDER BY id LIMIT 1"
+            ).fetchone()
+        if row is not None:
+            tid = row["id"]
+            if assignee and bound is None and row["label"] is not None:
+                conn.execute(
+                    "INSERT INTO sessions (name, bound_label, created_at, updated_at)"
+                    " VALUES (?,?,?,?)"
+                    " ON CONFLICT(name) DO UPDATE SET bound_label=excluded.bound_label,"
+                    " updated_at=excluded.updated_at",
+                    (assignee, row["label"], now(), now()),
+                )
+            conn.execute(
+                "UPDATE tasks SET state='in_progress', assignee=?, updated_at=? WHERE id=?",
+                (assignee, now(), tid),
+            )
+    if tid is None:
         return None
-    if assignee and row["assignee"] is None:
-        conn.execute("UPDATE tasks SET assignee=? WHERE id=?", (assignee, row["id"]))
-    _set_state(conn, row["id"], "in_progress")
-    conn.commit()
-    project(conn, row["id"])
-    return _task(conn, row["id"])
+    project(conn, tid)
+    return _task(conn, tid)
 
 
 def context(conn, task_id):
@@ -162,51 +220,51 @@ def context(conn, task_id):
 
 
 def note(conn, task_id, text):
-    _task(conn, task_id)
-    _append(conn, task_id, "note", text)
-    conn.commit()
+    with _tx(conn):
+        _task(conn, task_id)
+        _append(conn, task_id, "note", text)
     project(conn, task_id)
 
 
 def decide(conn, task_id, text):
-    _task(conn, task_id)
-    _append(conn, task_id, "decision", text)
-    conn.commit()
+    with _tx(conn):
+        _task(conn, task_id)
+        _append(conn, task_id, "decision", text)
     project(conn, task_id)
 
 
 def escalate(conn, task_id, question):
-    t = _task(conn, task_id)
-    if t["state"] == "done":
-        raise FlowError(f"task {task_id} is done; reopen it before escalating")
-    conn.execute(
-        "INSERT INTO escalations (task_id, question, created_at) VALUES (?,?,?)",
-        (task_id, question, now()),
-    )
-    _append(conn, task_id, "escalation", question)
-    _set_state(conn, task_id, "blocked")
-    conn.commit()
+    with _tx(conn):
+        t = _task(conn, task_id)
+        if t["state"] == "done":
+            raise FlowError(f"task {task_id} is done; reopen it before escalating")
+        conn.execute(
+            "INSERT INTO escalations (task_id, question, created_at) VALUES (?,?,?)",
+            (task_id, question, now()),
+        )
+        _append(conn, task_id, "escalation", question)
+        _set_state(conn, task_id, "blocked")
     project(conn, task_id)
 
 
 def split(conn, task_id, child_texts):
-    parent = _task(conn, task_id)
     if not child_texts:
         raise FlowError("split requires at least one child task")
-    if parent["state"] == "done":
-        raise FlowError(f"task {task_id} is done; reopen it before splitting")
     child_ids = []
-    for text in child_texts:
-        cid = conn.execute(
-            "INSERT INTO tasks (text, state, assignee, parent_id, created_at, updated_at)"
-            " VALUES (?, 'pending', ?, ?, ?, ?)",
-            (text, parent["assignee"], task_id, now(), now()),
-        ).lastrowid
-        _append(conn, cid, "system", f"created as child of task {task_id}")
-        child_ids.append(cid)
-    _append(conn, task_id, "split", f"split into tasks {child_ids}")
-    _set_state(conn, task_id, "blocked")
-    conn.commit()
+    with _tx(conn):
+        parent = _task(conn, task_id)
+        if parent["state"] == "done":
+            raise FlowError(f"task {task_id} is done; reopen it before splitting")
+        for text in child_texts:
+            cid = conn.execute(
+                "INSERT INTO tasks (text, state, label, parent_id, created_at, updated_at)"
+                " VALUES (?, 'pending', ?, ?, ?, ?)",
+                (text, parent["label"], task_id, now(), now()),
+            ).lastrowid
+            _append(conn, cid, "system", f"created as child of task {task_id}")
+            child_ids.append(cid)
+        _append(conn, task_id, "split", f"split into tasks {child_ids}")
+        _set_state(conn, task_id, "blocked")
     project(conn, task_id)
     for cid in child_ids:
         project(conn, cid)
@@ -214,23 +272,24 @@ def split(conn, task_id, child_texts):
 
 
 def done(conn, task_id, outcome):
-    _task(conn, task_id)
-    if _is_blocked(conn, task_id):
-        raise FlowError(
-            f"task {task_id} cannot be done: it still has unmet dependencies "
-            "(open escalation or unfinished children)"
+    parent_id = None
+    with _tx(conn):
+        _task(conn, task_id)
+        if _is_blocked(conn, task_id):
+            raise FlowError(
+                f"task {task_id} cannot be done: it still has unmet dependencies "
+                "(open escalation or unfinished children)"
+            )
+        conn.execute(
+            "UPDATE tasks SET state='done', outcome=?, updated_at=? WHERE id=?",
+            (outcome, now(), task_id),
         )
-    conn.execute(
-        "UPDATE tasks SET state='done', outcome=?, updated_at=? WHERE id=?",
-        (outcome, now(), task_id),
-    )
-    _append(conn, task_id, "done", outcome)
-    parent_id = _task(conn, task_id)["parent_id"]
-    conn.commit()
+        _append(conn, task_id, "done", outcome)
+        parent_id = _task(conn, task_id)["parent_id"]
+        if parent_id is not None:
+            _maybe_wake(conn, parent_id)  # same transaction: no stranded parent on crash
     project(conn, task_id)
     if parent_id is not None:
-        _maybe_wake(conn, parent_id)
-        conn.commit()
         project(conn, parent_id)
 
 
@@ -238,30 +297,29 @@ def reply(conn, task_id, text):
     """Human answers a blocked task. Records the reply on the baton, closes the
     open escalation, and wakes the task. The runner decides on pickup whether the
     reply is about this task (continue) or new scope (a fresh `add`)."""
-    _task(conn, task_id)
-    esc = conn.execute(
-        "SELECT id FROM escalations WHERE task_id=? AND answer IS NULL ORDER BY id LIMIT 1",
-        (task_id,),
-    ).fetchone()
-    if esc:
-        conn.execute(
-            "UPDATE escalations SET answer=?, answered_at=? WHERE id=?",
-            (text, now(), esc["id"]),
-        )
-    _append(conn, task_id, "reply", text)
-    conn.commit()
-    _maybe_wake(conn, task_id)
-    conn.commit()
+    with _tx(conn):
+        _task(conn, task_id)
+        esc = conn.execute(
+            "SELECT id FROM escalations WHERE task_id=? AND answer IS NULL ORDER BY id LIMIT 1",
+            (task_id,),
+        ).fetchone()
+        if esc:
+            conn.execute(
+                "UPDATE escalations SET answer=?, answered_at=? WHERE id=?",
+                (text, now(), esc["id"]),
+            )
+        _append(conn, task_id, "reply", text)
+        _maybe_wake(conn, task_id)
     project(conn, task_id)
 
 
 def reopen(conn, task_id):
-    t = _task(conn, task_id)
-    if t["state"] != "done":
-        raise FlowError(f"task {task_id} is not done (state={t['state']})")
-    _set_state(conn, task_id, "pending")
-    _append(conn, task_id, "system", "reopened")
-    conn.commit()
+    with _tx(conn):
+        t = _task(conn, task_id)
+        if t["state"] != "done":
+            raise FlowError(f"task {task_id} is not done (state={t['state']})")
+        _set_state(conn, task_id, "pending")
+        _append(conn, task_id, "system", "reopened")
     project(conn, task_id)
 
 
@@ -287,7 +345,7 @@ def project(conn, task_id):
         "",
         f"- **state**: {t['state']}",
         f"- **assignee**: {t['assignee'] or '—'}",
-        f"- **type**: {t['type'] or '—'}",
+        f"- **label**: {t['label'] or '—'}",
         f"- **parent**: {t['parent_id'] or '—'}",
         f"- **outcome**: {t['outcome'] or '—'}",
         "",
@@ -316,11 +374,10 @@ def main(argv=None, db_path=None):
 
     p = sub.add_parser("add", help="create a task")
     p.add_argument("text")
-    p.add_argument("--assignee")
-    p.add_argument("--type")
+    p.add_argument("--label")
 
     p = sub.add_parser("next", help="claim the next runnable task")
-    p.add_argument("--assignee")
+    p.add_argument("--session", "--assignee", dest="assignee")
 
     p = sub.add_parser("context", help="read a task's baton")
     p.add_argument("id", type=int)
@@ -367,7 +424,7 @@ def main(argv=None, db_path=None):
 
 def _dispatch(conn, args):
     if args.cmd == "add":
-        print(add(conn, args.text, assignee=args.assignee, type=args.type))
+        print(add(conn, args.text, label=args.label))
     elif args.cmd == "next":
         t = next_task(conn, assignee=args.assignee)
         if t is None:
