@@ -22,14 +22,28 @@ user asked for, on the pipeline so far (no implementation yet — that is gated 
 
 ## What did not go well
 
-1. **Stale, non-hermetic workspace (the biggest issue).** A re-run regenerated *some*
-   artifacts (use-case map, escalation queue) but left *others* stale (spec build plan,
-   constitution update plan, answer dossier). Those carry concepts from the
-   **pre-simplification** HLD — `Brain-to-Flow CLI Contract`, `Task Delivery Handshake
-   Contract`, `Reply Handling Contract`, `CLI Protocol Contract` — exactly the
-   operational machinery HLD-011 says was "deliberately stripped." The prework a human
-   would approve is a **mix of old and new**. A re-run must fully regenerate downstream
-   artifacts or version them; partial regeneration silently contaminates the gate.
+1. **Two independent contamination sources (my first diagnosis was only half right).**
+   The `Brain-to-Flow`/`Task Delivery`/`Reply Handling`/`CLI Protocol` strings —
+   operational machinery HLD-011 says was "deliberately stripped" — come from BOTH:
+
+   a. **Stale, non-hermetic workspace.** A re-run regenerated *some* artifacts but left
+      *others* stale, because `project_continue.sh` step 4 only rebuilds when
+      `spec_build_plan_review.md` is absent — a changed source HLD reused the old plan.
+      **FIXED** (HLDspec `6fc57e8`): a source-fingerprint gate now refuses a stale or
+      unverifiable built workspace (exit 3) and `HLDSPEC_FRESH=1` does a guarded clean
+      rebuild. Verified: the contaminated workspace is refused; a fresh rebuild drops
+      these from 23 files to 9.
+
+   b. **Generated fresh by `build_hld_answer_dossier.py` (separate, still open).** The
+      residual 9 are NOT stale — the dossier builder hardcodes `CONTRACT_NAME_RULES`
+      mapping `core.md`→"Brain-to-Flow CLI Contract" (our HLD cites core.md everywhere)
+      and `socket`→"Task Delivery Handshake Contract", which matches HLD-011's
+      *out-of-scope* line "Unix-socket task delivery… excluded on purpose" — i.e. it
+      **reads the exclusion list as a feature request**. This is project-specific
+      vocabulary + keyword-matching-meaning baked into a general tool (the same disease
+      as the resolve-before-escalate fix). Deferred on purpose: it is the blind-redo
+      experiment's own pre-registered failure signal — fix it *after*, with the
+      experiment as evidence.
 2. **Descriptive sections planned as features.** The first feature is HLD-001 (purpose)
    and the plan includes HLD-002 (vocabulary). Purpose/reference prose is not a
    buildable feature; the decomposition should route these to constitution/context, not
