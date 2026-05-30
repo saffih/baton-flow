@@ -222,30 +222,35 @@ Two verbs are **human/ops-facing**, not part of the runner loop:
 | `flow reply <id> <text>` | Answer a blocked task (§7). Records the reply on the baton and wakes the task; the runner decides on pickup whether it's about the task or new scope. |
 | `flow reopen <id>` | Move a `done` task back to `pending`. |
 
-## HLD-010 - Extensibility (deferred, not built)
+## HLD-010 - Work routing (soft affinity by label and named sessions)
 
 HLD-ID: HLD-010
 HLD-ROLE: architecture
-HLD-STATUS: planned
-HLD-RISK: LOW
-HLD-SPECS: TBD
-HLD-RESOURCES: TBD
+HLD-STATUS: active
+HLD-RISK: HIGH
+HLD-SPECS: constitution
+HLD-RESOURCES: flow.py,test_flow.py
+HLD-VERIFY: `flow next` without a session returns the oldest runnable task exactly as before; a session prefers its bound label, binds to the label of the first labeled task it claims, and falls back to any runnable task only when none of its label remain; a runner sees "none" only when no runnable work exists at all
 
-The model stays this small because all future complexity hangs off one field and one
-filter, never the loop:
+Routing keeps a session's context warm by feeding it work on one **subject** rather than
+thrashing it across unrelated subjects every pickup. It hangs off one existing field
+(the task's `label`) and one filter on `flow next` — the loop, the four states, and the
+wake rule are untouched.
 
-- **Routing by type/capability** — give a task an optional `type` tag; teach `flow next`
-  to filter on it. That alone enables "cheap model for DB tasks, strong model for
-  architecture," or capability-scoped sessions. The loop, states, and wake rule are
-  untouched.
-- **Multiple sessions** — every session calls `flow next`; the queue hands out runnable
-  tasks. Work-stealing falls out for free. No contract change.
-- **Must-halt tasks** — a tag that makes the session wait on a specific task instead of
-  parking it. Another field; add when needed.
+- **Label.** A task carries an optional `label` (its subject — a component, directory, or
+  topic). This reuses the existing task column; no new task field is added.
+- **Named sessions.** A runner identifies itself: `flow next --session <name>`. A small
+  `sessions` table records each session's **bound label**; `assignee` records which
+  session currently holds a task.
+- **Soft affinity.** A session starts unbound and takes the oldest runnable task of any
+  subject; if that task is labeled, the session **binds** to it. Once bound it prefers its
+  label, but if none of its label is runnable it **falls back** to any runnable task
+  (binding unchanged) rather than idle — the session is the scarce resource and must keep
+  working. A runner gets "none" only when the queue holds no runnable work at all.
+- **Backward compatible.** `flow next` with no `--session` behaves exactly as today.
 
-> **Current implementation note:** the runtime assumes a **single runner**. `flow next`
-> claims a task without a concurrency guard, so two runners could claim the same task.
-> Claim-safety for multiple sessions is deferred until routing lands.
+> **Future (not built):** routing by capability and *must-halt* tasks (wait on a specific
+> task instead of parking) are further fields on the same shape; add when needed.
 
 ## HLD-011 - Out of scope (deliberately stripped)
 
@@ -276,3 +281,47 @@ HLD-RESOURCES: flow.py
 - **Projection**: Markdown, one-way out.
 - **Loop**: `core.md`, agnostic, over the CLI + text interfaces.
 - **Runner (now)**: Claude. **Later (pluggable)**: Devin, Codex.
+
+## HLD-013 - Concurrency and durability
+
+HLD-ID: HLD-013
+HLD-ROLE: architecture
+HLD-STATUS: active
+HLD-RISK: HIGH
+HLD-SPECS: constitution
+HLD-RESOURCES: flow.py,test_flow.py
+HLD-VERIFY: concurrent `flow next` calls claim each task at most once (the claim takes the write lock before it reads the queue); every CLI operation is one all-or-nothing transaction (a crash leaves no partial state); the connection runs WAL + busy_timeout + synchronous=NORMAL
+
+Named sessions make concurrency real, so the base layer must be strong before routing
+rides on it.
+
+- **Atomic claim.** `flow next` takes the write lock *before* it reads the queue
+  (`BEGIN IMMEDIATE`), selects the runnable task, and claims it in the same transaction.
+  Two runners can never both hold one task: the second sees it already `in_progress` and
+  moves on.
+- **One transaction per operation.** Each command commits all of its effects or none. A
+  crash mid-operation cannot leave split state (e.g. a child marked `done` while its parent
+  stays `blocked` forever).
+- **Durable settings.** WAL journaling, a `busy_timeout` so a concurrent writer waits
+  instead of failing with "database is locked," and `synchronous=NORMAL`.
+
+The markdown projection is written *after* the transaction commits; it is a re-derivable
+view, never part of a transaction.
+
+## HLD-014 - Orphaned-work recovery (planned, not built)
+
+HLD-ID: HLD-014
+HLD-ROLE: architecture
+HLD-STATUS: planned
+HLD-RISK: LOW
+HLD-SPECS: TBD
+HLD-RESOURCES: TBD
+
+A session can claim a task and then vanish, leaving it stuck `in_progress` forever.
+Recovery — a **liveness** concern, separate from the correctness HLD-013 guarantees — will
+detect a claim whose session has gone silent, return the task to `pending` for another
+session, and **escalate** it after repeated reclaim (reusing the escalation primitive).
+Ownership-implying transitions (`done`, `escalate`, `split`) will verify the caller still
+holds the task; blackboard writes (`note`, `decide`, `reply`) stay multi-writer with
+attribution, per the baton model (HLD-008). Deferred until the protected base (HLD-013) is
+proven, then built as its own slice.
