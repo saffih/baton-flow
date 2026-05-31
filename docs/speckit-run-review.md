@@ -53,9 +53,25 @@ user asked for, on the pipeline so far (no implementation yet — that is gated 
    blockers, 0 contamination. The escalation queue (8) was resolved by the
    resolve-before-escalate protocol: 7 source-of-truth questions answered from the HLD
    with per-anchor citations, the 1 constitution gate approved as a no-op (ARCH-001..004
-   already ratified). Queue status `DECISIONS_RECORDED`, 0 open. **Hard stop reached:**
-   the HLDspec contract forbids invoking the `specify` CLI without explicit human
-   approval of this gate — that is a deliberate design gate, the correct place to pause.
+   already ratified). Queue status `DECISIONS_RECORDED`, 0 open.
+
+   **One rework cycle, cleared (the pipeline doing its job).** Re-reviewing after the
+   dossier fix raised a genuine BLOCKER `QG-015`: "constitution has only generic rules
+   but 8 interface contracts were extracted — contract-derived rules not added." This was
+   *caused* by the dossier fix succeeding — the 8 contracts are now legitimate, so the
+   coverage check became meaningful. Ran the gate's named remedy
+   (`build_speckit_constitution_from_contracts.py`): constitution 4 → 17 rules (8
+   contract + 5 data), all referencing real anchors, 0 contamination. Re-review →
+   `APPROVAL_READY_WITH_ACTIONS`, **0 blockers**; verified in `firstrun/` (the gate's
+   source dir): 17 rules, 8 clean contracts, 0 contamination.
+
+   **Now at `SPECKIT_PREWORK_APPROVAL_GATE`** — plan green, 0 conflicts, 0 flagged, 0
+   blockers. One ACTION remains (`QG-014`: judge reviews the answer-dossier action
+   findings before approval) — the human-review step the gate exists for, not a blocker.
+   **Hard stop reached:** the HLDspec contract forbids invoking the `specify` CLI without
+   explicit human approval of this gate. Per the by-the-book principle, the forward run
+   must then drive ALL SpecKit stages (specify → clarify → plan → tasks → analyze →
+   implement) via the real tool — not hand-authored substitutes.
 2. **Descriptive sections planned as features.** The first feature is HLD-001 (purpose)
    and the plan includes HLD-002 (vocabulary). Purpose/reference prose is not a
    buildable feature; the decomposition should route these to constitution/context, not
