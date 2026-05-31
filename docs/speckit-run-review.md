@@ -41,9 +41,21 @@ user asked for, on the pipeline so far (no implementation yet — that is gated 
       *out-of-scope* line "Unix-socket task delivery… excluded on purpose" — i.e. it
       **reads the exclusion list as a feature request**. This is project-specific
       vocabulary + keyword-matching-meaning baked into a general tool (the same disease
-      as the resolve-before-escalate fix). Deferred on purpose: it is the blind-redo
-      experiment's own pre-registered failure signal — fix it *after*, with the
-      experiment as evidence.
+      as the resolve-before-escalate fix). **FIXED** (HLDspec `5aedbed`): contracts are
+      now named from the section's own title and sections whose `HLD-ROLE` is
+      purpose/reference/governance mint no contract. Verified on the Flow HLD: a fresh
+      rebuild yields **0** Brain-to-Flow/Task-Delivery occurrences (23 → 9 after
+      hermeticity → 0 now); the 8 contracts generated are all real api/architecture/
+      processing sections.
+
+   **Pipeline is now clean end-to-end.** After the dossier fix, a fresh Flow run reaches
+   `SPECKIT_PREWORK_APPROVAL_GATE` with: plan gate green, 0 conflicts, 0 flagged, 0
+   blockers, 0 contamination. The escalation queue (8) was resolved by the
+   resolve-before-escalate protocol: 7 source-of-truth questions answered from the HLD
+   with per-anchor citations, the 1 constitution gate approved as a no-op (ARCH-001..004
+   already ratified). Queue status `DECISIONS_RECORDED`, 0 open. **Hard stop reached:**
+   the HLDspec contract forbids invoking the `specify` CLI without explicit human
+   approval of this gate — that is a deliberate design gate, the correct place to pause.
 2. **Descriptive sections planned as features.** The first feature is HLD-001 (purpose)
    and the plan includes HLD-002 (vocabulary). Purpose/reference prose is not a
    buildable feature; the decomposition should route these to constitution/context, not
