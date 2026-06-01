@@ -8,6 +8,7 @@
 ## HLD-001 - What it is
 
 HLD-ID: HLD-001
+HLD-DESC: HLD-001 is in-scope purpose at medium risk, touching none; "what Baton Flow is — keeping AI work continuous across sessions".
 HLD-ROLE: purpose
 HLD-STATUS: active
 HLD-RISK: MEDIUM
@@ -33,6 +34,7 @@ and you steer by replying to it.
 ## HLD-002 - Vocabulary
 
 HLD-ID: HLD-002
+HLD-DESC: HLD-002 is in-scope reference at low risk, touching none; "load-bearing vocabulary: baton, handoff, runner".
 HLD-ROLE: reference
 HLD-STATUS: active
 HLD-RISK: LOW
@@ -50,6 +52,7 @@ HLD-RESOURCES: core.md
 ## HLD-003 - Core model
 
 HLD-ID: HLD-003
+HLD-DESC: HLD-003 is in-scope governance at high risk, touching data and processing; "SQLite is the single source of truth; markdown is one-way".
 HLD-ROLE: governance
 HLD-STATUS: active
 HLD-RISK: HIGH
@@ -78,6 +81,7 @@ CLI verbs  ──►  SQLite (source of truth)  ──►  markdown projection (
 ## HLD-004 - The task lifecycle
 
 HLD-ID: HLD-004
+HLD-DESC: HLD-004 is in-scope architecture at high risk, touching processing and data; "the four-state task lifecycle".
 HLD-ROLE: architecture
 HLD-STATUS: active
 HLD-RISK: HIGH
@@ -107,6 +111,7 @@ unmet dependencies.* A task cannot be `done` while it has unfinished children.
 ## HLD-005 - The wait model (fork-join)
 
 HLD-ID: HLD-005
+HLD-DESC: HLD-005 is in-scope architecture at high risk, touching processing; "the unified fork-join wait model (escalate == split)".
 HLD-ROLE: architecture
 HLD-STATUS: active
 HLD-RISK: HIGH
@@ -132,6 +137,7 @@ as `async/await` joins or a build-system DAG.
 ## HLD-006 - Escalation triggers (runner → human)
 
 HLD-ID: HLD-006
+HLD-DESC: HLD-006 is in-scope processing at medium risk, touching processing; "escalation triggers from runner to human".
 HLD-ROLE: processing
 HLD-STATUS: active
 HLD-RISK: MEDIUM
@@ -151,6 +157,7 @@ Any trigger → `flow escalate`, task → `blocked`, runner moves on.
 ## HLD-007 - Human-in-the-loop (human → runner)
 
 HLD-ID: HLD-007
+HLD-DESC: HLD-007 is in-scope processing at medium risk, touching processing; "human-in-the-loop replies route back to the runner".
 HLD-ROLE: processing
 HLD-STATUS: active
 HLD-RISK: MEDIUM
@@ -169,6 +176,7 @@ This keeps steering lossless and never silently merges unrelated scope into a ta
 ## HLD-008 - The baton (per-task document)
 
 HLD-ID: HLD-008
+HLD-DESC: HLD-008 is in-scope architecture at high risk, touching data and processing; "the baton is the DB-owned per-task document".
 HLD-ROLE: architecture
 HLD-STATUS: active
 HLD-RISK: HIGH
@@ -193,6 +201,7 @@ from markdown files directly.
 ## HLD-009 - The CLI contract
 
 HLD-ID: HLD-009
+HLD-DESC: HLD-009 is in-scope api at high risk, touching cli; "the flow CLI verbs are the runner contract".
 HLD-ROLE: api
 HLD-STATUS: active
 HLD-RISK: HIGH
@@ -225,6 +234,7 @@ Two verbs are **human/ops-facing**, not part of the runner loop:
 ## HLD-010 - Work routing (soft affinity by label and named sessions)
 
 HLD-ID: HLD-010
+HLD-DESC: HLD-010 is in-scope architecture at high risk, touching processing; "work routing by soft label affinity and named sessions".
 HLD-ROLE: architecture
 HLD-STATUS: active
 HLD-RISK: HIGH
@@ -271,6 +281,7 @@ Re-introduce only with a documented reason.
 ## HLD-012 - Technology
 
 HLD-ID: HLD-012
+HLD-DESC: HLD-012 is in-scope operations at low risk, touching none; "technology choices: Python, SQLite, files".
 HLD-ROLE: operations
 HLD-STATUS: active
 HLD-RISK: LOW
@@ -286,6 +297,7 @@ HLD-RESOURCES: flow.py
 ## HLD-013 - Concurrency and durability
 
 HLD-ID: HLD-013
+HLD-DESC: HLD-013 is in-scope architecture at high risk, touching concurrency and data; "concurrency and durability — atomic claim, WAL".
 HLD-ROLE: architecture
 HLD-STATUS: active
 HLD-RISK: HIGH
@@ -312,6 +324,7 @@ view, never part of a transaction.
 ## HLD-014 - Orphaned-work recovery (lease, reclaim, fence)
 
 HLD-ID: HLD-014
+HLD-DESC: HLD-014 is in-scope architecture at high risk, touching concurrency, data and processing; "orphaned-work recovery: lease, reclaim, fence".
 HLD-ROLE: architecture
 HLD-STATUS: active
 HLD-RISK: HIGH
