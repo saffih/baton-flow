@@ -260,6 +260,7 @@ HLD-STATUS: active
 HLD-RISK: LOW
 HLD-SPECS: TBD
 HLD-RESOURCES: TBD
+HLD-DESC: HLD-011 is out-of-scope governance at low risk, touching none; "unix-socket task delivery, connection pools, health daemons, failover, web UI / HTTP API, environment staging, migration tooling — deliberately stripped".
 
 The prior design accreted operational machinery that is **not** part of this system:
 Unix-socket task delivery, connection pools, health-monitoring daemons, automatic
