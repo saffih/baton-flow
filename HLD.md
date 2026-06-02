@@ -161,8 +161,9 @@ HLD-DESC: HLD-007 is in-scope processing at medium risk, touching processing; "h
 HLD-ROLE: processing
 HLD-STATUS: active
 HLD-RISK: MEDIUM
-HLD-SPECS: TBD
+HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,core.md
+HLD-VERIFY: a human reply about the task itself appends to the baton and unblocks; a reply about anything else becomes a new task and leaves the original blocked
 
 When the human answers a blocked task, one binary question decides what happens:
 
