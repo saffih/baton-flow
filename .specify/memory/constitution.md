@@ -29,7 +29,7 @@ The execution loop (`core.md`) depends on exactly two interfaces: the `flow` CLI
 text/markdown. It MUST NOT name a specific AI. Runners use **only** the published CLI verbs
 — no direct database access, ever. The CLI contract (HLD-009) is a stable seam: it changes
 independently of processing behavior, and processing changes MUST NOT require contract
-changes. Human/ops verbs (`reply`, `reopen`) are not part of the runner loop.
+changes. Human/ops verbs (`reply`, `reopen`, `list`) are not part of the runner loop.
 
 ### IV. Test-First and Regression-Ratchet (NON-NEGOTIABLE)
 

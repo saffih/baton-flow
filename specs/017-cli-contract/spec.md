@@ -7,7 +7,7 @@
 **Status**: Draft
 
 **Source HLD**: HLD-009 — `HLD-ROLE: api`, `HLD-RISK: HIGH`, `HLD-SPECS: constitution`
-**HLD-VERIFY**: runners use only the listed verbs; no direct database access; reply and reopen are human/ops-facing and not part of the runner loop
+**HLD-VERIFY**: runners use only the listed verbs; no direct database access; reply, reopen, and list are human/ops-facing and not part of the runner loop
 
 **Input**: HLD-009 — the agnostic CLI surface, runner verbs, human/ops verbs, no-DB constraint
 
