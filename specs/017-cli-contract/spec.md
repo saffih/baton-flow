@@ -141,8 +141,8 @@ and the task wakes.
 - **SC-002**: A contract test asserts that `reply`, `reopen`, and `list` are absent
   from the runner-permitted verb set (core.md enumerates only runner verbs).
 - **SC-003**: The HLD-009 VERIFY invariant ("runners use only the listed verbs; no
-  direct database access; reply and reopen are human/ops-facing") is cited by ID in
-  at least one test.
+  direct database access; reply, reopen, and list are human/ops-facing and not part
+  of the runner loop") is cited by ID in at least one test.
 - **SC-004**: The `test_cli_contract_is_agnostic` test (or equivalent) confirms that
   no verb name, argument name, or output string contains a specific AI system name.
 - **SC-005**: All 47 prior tests remain green after any change introduced by this spec.
