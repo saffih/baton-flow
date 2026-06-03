@@ -34,3 +34,9 @@
 All items pass. HLD-009 is a HIGH-risk constitution-source spec; the HLD-VERIFY
 invariant is cited explicitly in the spec (SC-003). Brownfield assumption documented:
 flow.py already implements all verbs; tasks are characterization-first.
+
+Gap resolved (post-specify RunSkeptic): `flow list` (11th verb, read-only human/ops
+observation) was absent from the original spec. HLD-009 amended to add `list` as a
+3rd human/ops verb. FR-002, SC-002, Key Entities, User Story 3, and Assumptions
+updated to match. Guard test `test_cli_exposes_only_contract_verbs` already asserts
+11 verbs including `list` — spec now consistent with implementation.

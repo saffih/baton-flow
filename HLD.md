@@ -208,7 +208,7 @@ HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,flow,core.md
-HLD-VERIFY: runners use only the listed verbs; no direct database access; reply and reopen are human/ops-facing and not part of the runner loop
+HLD-VERIFY: runners use only the listed verbs; no direct database access; reply, reopen, and list are human/ops-facing and not part of the runner loop
 
 The entire runner-facing API is small. This is the agnostic surface.
 
@@ -225,12 +225,13 @@ The entire runner-facing API is small. This is the agnostic surface.
 
 Runners use **only** these. No direct database access, ever.
 
-Two verbs are **human/ops-facing**, not part of the runner loop:
+Three verbs are **human/ops-facing**, not part of the runner loop:
 
 | Verb | Meaning |
 |------|---------|
 | `flow reply <id> <text>` | Answer a blocked task (§7). Records the reply on the baton and wakes the task; the runner decides on pickup whether it's about the task or new scope. |
 | `flow reopen <id>` | Move a `done` task back to `pending`. |
+| `flow list` | List all tasks with their current state. Read-only observation verb; never changes state. |
 
 ## HLD-010 - Work routing (soft affinity by label and named sessions)
 

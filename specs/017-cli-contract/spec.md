@@ -74,8 +74,8 @@ call them.
 contract boundary. Mixing them breaks the agnostic guarantee.
 
 **Independent Test**: A runner loop that enumerates all verbs it is permitted to use
-does not include `reply` or `reopen`. A human can reply to a blocked task and the
-task wakes.
+does not include `reply`, `reopen`, or `list`. A human can reply to a blocked task
+and the task wakes.
 
 **Acceptance Scenarios**:
 
@@ -105,8 +105,9 @@ task wakes.
 
 - **FR-001**: The system MUST expose exactly 8 runner verbs: `add`, `next`, `context`,
   `note`, `done`, `escalate`, `split`, `decide`. No additional runner verbs exist.
-- **FR-002**: The system MUST expose exactly 2 human/ops verbs: `reply`, `reopen`.
+- **FR-002**: The system MUST expose exactly 3 human/ops verbs: `reply`, `reopen`, `list`.
   These MUST NOT appear in runner loop documentation or be called within a runner loop.
+  `list` is read-only and never changes state; `reply` and `reopen` change task state.
 - **FR-003**: Any runner MUST be able to complete a full work cycle (claim → work →
   finish or escalate) using only the 8 runner verbs, with no knowledge of the
   underlying storage technology.
@@ -123,7 +124,7 @@ task wakes.
 ### Key Entities
 
 - **Verb**: A named CLI command with defined arguments, preconditions, and effects.
-  Split into: runner verbs (8) and human/ops verbs (2).
+  Split into: runner verbs (8) and human/ops verbs (3).
 - **Baton**: The per-task append-only context document. All verbs that write state
   do so via the baton.
 - **Session**: The identity claiming a task. Determines fence eligibility (HLD-014).
@@ -137,8 +138,8 @@ task wakes.
 - **SC-001**: Every runner verb (`add`, `next`, `context`, `note`, `done`, `escalate`,
   `split`, `decide`) has at least one passing test that exercises its contract
   in isolation.
-- **SC-002**: A contract test asserts that `reply` and `reopen` are absent from the
-  runner-permitted verb set (core.md enumerates only runner verbs).
+- **SC-002**: A contract test asserts that `reply`, `reopen`, and `list` are absent
+  from the runner-permitted verb set (core.md enumerates only runner verbs).
 - **SC-003**: The HLD-009 VERIFY invariant ("runners use only the listed verbs; no
   direct database access; reply and reopen are human/ops-facing") is cited by ID in
   at least one test.
@@ -150,7 +151,7 @@ task wakes.
 
 ## Assumptions
 
-- `flow.py` already implements all 10 verbs correctly; this spec drives
+- `flow.py` already implements all 11 verbs correctly; this spec drives
   characterization tests and contract documentation, not a new implementation.
 - The verb set is stable and closed: adding a verb requires an HLD-009 amendment.
 - `flow add` is in the runner verb set because runners use it in the off-topic reply
