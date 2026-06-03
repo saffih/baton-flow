@@ -7,7 +7,7 @@ by existing tests. One new test needed: SC-003 (HLD-007 VERIFY invariant citatio
 
 ## Phase 1: Setup — Baseline
 
-- [ ] T001 Run `pytest test_flow.py` and confirm exactly 55 tests pass — Slice A gate
+- [x] T001 Run `pytest test_flow.py` and confirm exactly 55 tests pass — Slice A gate
 
 ---
 
@@ -15,16 +15,16 @@ by existing tests. One new test needed: SC-003 (HLD-007 VERIFY invariant citatio
 
 **Goal**: One new test cites the HLD-007 VERIFY invariant by ID (SC-003).
 
-- [ ] T002 [P] [US1] Confirm `test_hld007_verify_invariant` absent from `test_flow.py` (RED gate: grep returns nothing)
-- [ ] T003 [US1] Write `test_hld007_verify_invariant` in `test_flow.py`: docstring cites "HLD-007 VERIFY" + full invariant text; add task; escalate it (blocked); call `flow.reply(conn, tid, "answer")`; assert state==pending and a reply entry appears on context (Slice B)
-- [ ] T004 [US1] Run `pytest test_flow.py::test_hld007_verify_invariant` — confirm GREEN; then run full suite — confirm all 54 prior tests still pass
+- [x] T002 [P] [US1] Confirm `test_hld007_verify_invariant` absent from `test_flow.py` (RED gate: grep returns nothing)
+- [x] T003 [US1] Write `test_hld007_verify_invariant` in `test_flow.py`: docstring cites "HLD-007 VERIFY" + full invariant text; add task; escalate it (blocked); call `flow.reply(conn, tid, "answer")`; assert state==pending and a reply entry appears on context (Slice B)
+- [x] T004 [US1] Run `pytest test_flow.py::test_hld007_verify_invariant` — confirm GREEN; then run full suite — confirm all 54 prior tests still pass
 
 ---
 
 ## Phase N: Polish
 
-- [ ] T005 Run `pytest test_flow.py` — confirm 56 total tests pass (SC-004 gate)
-- [ ] T006 Update `specs/021-human-in-loop/plan.md` Agent Context to reflect implementation complete
+- [x] T005 Run `pytest test_flow.py` — confirm 56 total tests pass (SC-004 gate)
+- [x] T006 Update `specs/021-human-in-loop/plan.md` Agent Context to reflect implementation complete
 
 ---
 

@@ -73,5 +73,5 @@ with `kind=="escalation"` and the question text exists on the baton.
 ## Agent Context
 
 <!-- SPECKIT START -->
-Active feature plan: `specs/020-escalation-triggers/plan.md` (G03 — spec 006, plan phase complete)
+Active feature plan: `specs/020-escalation-triggers/plan.md` (G03 — spec 006, implementation complete)
 <!-- SPECKIT END -->

@@ -570,6 +570,97 @@ def test_human_ops_verbs_absent_from_runner_loop():
         assert verb in core, f"runner verb missing from core.md: {verb}"
 
 
+def test_hld004_verify_invariant(conn):
+    """HLD-004 VERIFY: only four states exist; a task cannot be done with unfinished
+    children; done is reopenable; blocked wakes to pending only when all dependencies
+    resolve."""
+    # only four states exist
+    assert flow.STATES == ("pending", "in_progress", "blocked", "done")
+    assert len(flow.STATES) == 4
+
+    # a task cannot be done with unfinished children
+    parent = flow.add(conn, "parent")
+    flow.next_task(conn, assignee="runner")
+    flow.split(conn, parent, ["child A", "child B"])
+    with pytest.raises(flow.FlowError):
+        flow.done(conn, parent, "premature")  # parent is blocked by unfinished children
+
+    # done is reopenable
+    single = flow.add(conn, "single task")
+    flow.next_task(conn, assignee="runner")
+    flow.done(conn, single, "finished")
+    assert state(conn, single) == "done"
+    flow.reopen(conn, single)
+    assert state(conn, single) == "pending"
+
+
+def test_hld005_verify_invariant(conn):
+    """HLD-005 VERIFY: escalate and split both park the task as blocked and free the
+    runner; a task is runnable only when it has no unmet dependencies."""
+    # escalate parks the task as blocked and frees the runner
+    task_a = flow.add(conn, "task A")
+    task_b = flow.add(conn, "task B")
+    flow.next_task(conn, assignee="runner")  # claims task_a
+    flow.escalate(conn, task_a, "need human input")
+    assert state(conn, task_a) == "blocked"
+    claimed = flow.next_task(conn, assignee="runner")  # runner is free to claim task_b
+    assert claimed is not None and claimed["id"] == task_b
+
+    # split parks the parent as blocked and frees the runner; children are runnable
+    parent = flow.add(conn, "parent")
+    flow.next_task(conn, assignee="runner2")  # claims parent
+    child_ids = flow.split(conn, parent, ["child X", "child Y"])
+    assert state(conn, parent) == "blocked"
+    # children have no unmet dependencies — they are runnable
+    c1 = flow.next_task(conn, assignee="runner3")
+    assert c1 is not None and c1["id"] in child_ids
+
+
+def test_escalation_question_on_baton(conn):
+    # SC-001: escalate records the question text on the baton as a kind="escalation" entry.
+    tid = flow.add(conn, "task needing help")
+    flow.next_task(conn, assignee="runner")
+    flow.escalate(conn, tid, "which path?")
+    _, entries = flow.context(conn, tid)
+    assert any(e["kind"] == "escalation" and "which path?" in e["text"] for e in entries)
+
+
+def test_escalation_triggers_in_core_md():
+    # SC-002: core.md documents all four escalation triggers by name.
+    core = (Path(flow.__file__).parent / "core.md").read_text()
+    for trigger in ("Ambiguity", "Authority", "Irreversibility", "Repeated failure"):
+        assert trigger in core, f"escalation trigger missing from core.md: {trigger}"
+
+
+def test_hld007_verify_invariant(conn):
+    """HLD-007 VERIFY: a human reply about the task itself appends to the baton and
+    unblocks; a reply about anything else becomes a new task and leaves the original
+    blocked."""
+    tid = flow.add(conn, "question task")
+    flow.next_task(conn, assignee="runner")
+    flow.escalate(conn, tid, "which approach?")
+    assert state(conn, tid) == "blocked"
+    flow.reply(conn, tid, "use approach A")
+    assert state(conn, tid) == "pending"
+    _, entries = flow.context(conn, tid)
+    assert any(e["kind"] == "reply" and "use approach A" in e["text"] for e in entries)
+
+
+def test_hld008_verify_invariant(conn, tmp_path):
+    """HLD-008 VERIFY: the baton lives in the database and is read via the CLI;
+    markdown batons are a one-way projection; declared context is the only context
+    the contract touches."""
+    tid = flow.add(conn, "baton task")
+    flow.note(conn, tid, "critical finding")
+    # delete the markdown projection — declared context must still be accessible via context()
+    md = tmp_path / ".flow" / "batons" / f"{tid}.md"
+    if md.exists():
+        md.unlink()
+    t, entries = flow.context(conn, tid)
+    assert t["id"] == tid
+    assert any(e["kind"] == "note" and "critical finding" in e["text"] for e in entries)
+
+
 def test_hld009_verify_invariant():
     """HLD-009 VERIFY: runners use only the listed verbs; no direct database access;
     reply, reopen, and list are human/ops-facing and not part of the runner loop.

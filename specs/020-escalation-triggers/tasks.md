@@ -7,7 +7,7 @@ test. Two new tests needed: SC-001 (question on baton) and SC-002 (triggers in c
 
 ## Phase 1: Setup — Baseline
 
-- [ ] T001 Run `pytest test_flow.py` and confirm exactly 53 tests pass — Slice A gate
+- [x] T001 Run `pytest test_flow.py` and confirm exactly 53 tests pass — Slice A gate
 
 ---
 
@@ -16,19 +16,19 @@ test. Two new tests needed: SC-001 (question on baton) and SC-002 (triggers in c
 **Goal**: Two new tests characterize the escalation question recording (SC-001) and the
 four-trigger documentation in core.md (SC-002).
 
-- [ ] T002 [P] [US1] Confirm `test_escalation_question_on_baton` absent from `test_flow.py` (RED gate: grep returns nothing)
-- [ ] T003 [P] [US1] Confirm `test_escalation_triggers_in_core_md` absent from `test_flow.py` (RED gate: grep returns nothing)
-- [ ] T004 [US1] Write `test_escalation_question_on_baton` in `test_flow.py`: add task; call `flow.escalate(conn, tid, "which path?")`; call `flow.context`; assert an entry with `kind == "escalation"` and `"which path?" in text` exists on the baton (Slice B)
-- [ ] T005 [US1] Run `pytest test_flow.py::test_escalation_question_on_baton` — confirm GREEN; then run full suite — confirm all 53 prior tests still pass
-- [ ] T006 [US1] Write `test_escalation_triggers_in_core_md` in `test_flow.py`: read `core.md`; assert each trigger name is present: `"Ambiguity"`, `"Authority"`, `"Irreversibility"`, `"Repeated failure"` (Slice C)
-- [ ] T007 [US1] Run `pytest test_flow.py::test_escalation_triggers_in_core_md` — confirm GREEN; then run full suite — confirm all prior tests still pass
+- [x] T002 [P] [US1] Confirm `test_escalation_question_on_baton` absent from `test_flow.py` (RED gate: grep returns nothing)
+- [x] T003 [P] [US1] Confirm `test_escalation_triggers_in_core_md` absent from `test_flow.py` (RED gate: grep returns nothing)
+- [x] T004 [US1] Write `test_escalation_question_on_baton` in `test_flow.py`: add task; call `flow.escalate(conn, tid, "which path?")`; call `flow.context`; assert an entry with `kind == "escalation"` and `"which path?" in text` exists on the baton (Slice B)
+- [x] T005 [US1] Run `pytest test_flow.py::test_escalation_question_on_baton` — confirm GREEN; then run full suite — confirm all 53 prior tests still pass
+- [x] T006 [US1] Write `test_escalation_triggers_in_core_md` in `test_flow.py`: read `core.md`; assert each trigger name is present: `"Ambiguity"`, `"Authority"`, `"Irreversibility"`, `"Repeated failure"` (Slice C)
+- [x] T007 [US1] Run `pytest test_flow.py::test_escalation_triggers_in_core_md` — confirm GREEN; then run full suite — confirm all prior tests still pass
 
 ---
 
 ## Phase N: Polish
 
-- [ ] T008 Run `pytest test_flow.py` — confirm 55 total tests pass (SC-004 gate)
-- [ ] T009 Update `specs/020-escalation-triggers/plan.md` Agent Context to reflect implementation complete
+- [x] T008 Run `pytest test_flow.py` — confirm 55 total tests pass (SC-004 gate)
+- [x] T009 Update `specs/020-escalation-triggers/plan.md` Agent Context to reflect implementation complete
 
 ---
 

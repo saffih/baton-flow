@@ -114,5 +114,5 @@ asserts the structural guarantees of the VERIFY clause against the running syste
 ## Agent Context
 
 <!-- SPECKIT START -->
-Active feature plan: `specs/018-task-lifecycle/plan.md` (G03 — spec 004, plan phase complete)
+Active feature plan: `specs/018-task-lifecycle/plan.md` (G03 — spec 004, implementation complete)
 <!-- SPECKIT END -->

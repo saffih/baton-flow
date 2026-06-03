@@ -19,7 +19,7 @@ All new tests go in `test_flow.py`. No source file changes.
 
 **Independent Test**: `pytest test_flow.py` exits 0 with exactly 51 passed.
 
-- [ ] T001 Run `pytest test_flow.py` and confirm exactly 51 tests pass — Slice A gate
+- [x] T001 Run `pytest test_flow.py` and confirm exactly 51 tests pass — Slice A gate
 
 ---
 
@@ -32,9 +32,9 @@ VERIFY invariant by ID.
 **Independent Test**: `pytest test_flow.py::test_hld004_verify_invariant` passes; all 51
 prior tests still green.
 
-- [ ] T002 [US1] Confirm `test_hld004_verify_invariant` is absent from `test_flow.py` (RED gate: `grep test_hld004_verify_invariant test_flow.py` returns nothing)
-- [ ] T003 [US1] Write `test_hld004_verify_invariant` in `test_flow.py`: docstring cites `"HLD-004 VERIFY"` and full text `"only four states exist; a task cannot be done with unfinished children; done is reopenable; blocked wakes to pending only when all dependencies resolve"`; assert `flow.STATES == ("pending", "in_progress", "blocked", "done")`; assert reopen callable on a done task; assert done raises on a task with an unfinished child
-- [ ] T004 [US1] Run `pytest test_flow.py::test_hld004_verify_invariant` — confirm GREEN; then run `pytest test_flow.py` — confirm all 51 prior tests still pass (Slice B gate)
+- [x] T002 [US1] Confirm `test_hld004_verify_invariant` is absent from `test_flow.py` (RED gate: `grep test_hld004_verify_invariant test_flow.py` returns nothing)
+- [x] T003 [US1] Write `test_hld004_verify_invariant` in `test_flow.py`: docstring cites `"HLD-004 VERIFY"` and full text `"only four states exist; a task cannot be done with unfinished children; done is reopenable; blocked wakes to pending only when all dependencies resolve"`; assert `flow.STATES == ("pending", "in_progress", "blocked", "done")`; assert reopen callable on a done task; assert done raises on a task with an unfinished child
+- [x] T004 [US1] Run `pytest test_flow.py::test_hld004_verify_invariant` — confirm GREEN; then run `pytest test_flow.py` — confirm all 51 prior tests still pass (Slice B gate)
 
 ---
 
@@ -42,8 +42,8 @@ prior tests still green.
 
 **Purpose**: Final SC-007 regression gate.
 
-- [ ] T005 Run `pytest test_flow.py` — confirm all 52 tests pass (51 prior + 1 new)
-- [ ] T006 Update `specs/018-task-lifecycle/plan.md` Agent Context between `<!-- SPECKIT START -->` and `<!-- SPECKIT END -->` markers to reflect implementation complete
+- [x] T005 Run `pytest test_flow.py` — confirm all 52 tests pass (51 prior + 1 new)
+- [x] T006 Update `specs/018-task-lifecycle/plan.md` Agent Context between `<!-- SPECKIT START -->` and `<!-- SPECKIT END -->` markers to reflect implementation complete
 
 ---
 

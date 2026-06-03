@@ -68,5 +68,5 @@ invariant citation by ID).
 ## Agent Context
 
 <!-- SPECKIT START -->
-Active feature plan: `specs/022-the-baton/plan.md` (G03 — spec 008, plan phase complete)
+Active feature plan: `specs/022-the-baton/plan.md` (G03 — spec 008, implementation complete)
 <!-- SPECKIT END -->

@@ -73,5 +73,5 @@ tests. One new test needed: SC-005 (HLD-005 VERIFY citation by ID).
 ## Agent Context
 
 <!-- SPECKIT START -->
-Active feature plan: `specs/019-wait-model/plan.md` (G03 — spec 005, plan phase complete)
+Active feature plan: `specs/019-wait-model/plan.md` (G03 — spec 005, implementation complete)
 <!-- SPECKIT END -->

@@ -70,5 +70,5 @@ a reply entry appears on the baton context. The key addition is the docstring VE
 ## Agent Context
 
 <!-- SPECKIT START -->
-Active feature plan: `specs/021-human-in-loop/plan.md` (G03 — spec 007, plan phase complete)
+Active feature plan: `specs/021-human-in-loop/plan.md` (G03 — spec 007, implementation complete)
 <!-- SPECKIT END -->
