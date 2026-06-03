@@ -165,5 +165,5 @@ suite) → passes against the real core.md.
 ## Agent Context
 
 <!-- SPECKIT START -->
-Active feature plan: `specs/017-cli-contract/plan.md` (G02 — spec 009, tasks phase complete)
+Active feature plan: `specs/017-cli-contract/plan.md` (G02 — spec 009, implementation complete)
 <!-- SPECKIT END -->

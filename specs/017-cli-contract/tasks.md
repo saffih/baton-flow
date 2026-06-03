@@ -22,7 +22,7 @@ After writing, run isolated → then full suite. Constitution Principle IV: NON-
 
 **Independent Test**: `pytest test_flow.py` exits 0 with exactly 47 passed.
 
-- [ ] T001 Run `pytest test_flow.py` and confirm exactly 47 tests pass — Slice A gate
+- [x] T001 Run `pytest test_flow.py` and confirm exactly 47 tests pass — Slice A gate
 
 ---
 
@@ -35,9 +35,9 @@ core contract in isolation.
 **Independent Test**: `pytest test_flow.py::test_runner_verb_contracts` passes; all 47 prior
 tests still green.
 
-- [ ] T002 [US1] Confirm `test_runner_verb_contracts` is absent from `test_flow.py` (RED gate: `grep test_runner_verb_contracts test_flow.py` returns nothing)
-- [ ] T003 [US1] Write `test_runner_verb_contracts` in `test_flow.py` covering: `flow add` creates a pending task; `flow next` on empty DB returns "none"; `flow next` on non-empty DB returns and claims a task; `flow context` returns baton for claimed task; `flow note` appends text to baton; `flow done` completes task with stated outcome; `flow escalate` transitions task to blocked; `flow decide` records decision on baton
-- [ ] T004 [US1] Run `pytest test_flow.py::test_runner_verb_contracts` — confirm GREEN; then run `pytest test_flow.py` — confirm all 47 prior tests still pass
+- [x] T002 [US1] Confirm `test_runner_verb_contracts` is absent from `test_flow.py` (RED gate: `grep test_runner_verb_contracts test_flow.py` returns nothing)
+- [x] T003 [US1] Write `test_runner_verb_contracts` in `test_flow.py` covering: `flow add` creates a pending task; `flow next` on empty DB returns "none"; `flow next` on non-empty DB returns and claims a task; `flow context` returns baton for claimed task; `flow note` appends text to baton; `flow done` completes task with stated outcome; `flow escalate` transitions task to blocked; `flow decide` records decision on baton
+- [x] T004 [US1] Run `pytest test_flow.py::test_runner_verb_contracts` — confirm GREEN; then run `pytest test_flow.py` — confirm all 47 prior tests still pass
 
 ---
 
@@ -50,8 +50,8 @@ when all children are done.
 **Independent Test**: `pytest test_flow.py::test_runner_verb_contracts` passes including
 split scenario; full suite still green.
 
-- [ ] T005 [US2] Extend `test_runner_verb_contracts` in `test_flow.py` with split scenario: assert `flow split <id> "A" "B"` creates two child tasks (pending), transitions parent to blocked, and parent returns to pending after both children are marked done
-- [ ] T006 [US2] Run `pytest test_flow.py::test_runner_verb_contracts` — confirm split assertions GREEN; then run `pytest test_flow.py` — confirm all prior tests still pass
+- [x] T005 [US2] Extend `test_runner_verb_contracts` in `test_flow.py` with split scenario: assert `flow split <id> "A" "B"` creates two child tasks (pending), transitions parent to blocked, and parent returns to pending after both children are marked done
+- [x] T006 [US2] Run `pytest test_flow.py::test_runner_verb_contracts` — confirm split assertions GREEN; then run `pytest test_flow.py` — confirm all prior tests still pass
 
 ---
 
@@ -64,12 +64,12 @@ invariant by ID and assert its structural guarantees (SC-003 — Slice D).
 **Independent Test**: Both `test_human_ops_verbs_absent_from_runner_loop` and
 `test_hld009_verify_invariant` pass; full suite still green.
 
-- [ ] T007 [P] [US3] Confirm `test_human_ops_verbs_absent_from_runner_loop` is absent from `test_flow.py` (RED gate: grep returns nothing)
-- [ ] T008 [P] [US3] Confirm `test_hld009_verify_invariant` is absent from `test_flow.py` (RED gate: grep returns nothing)
-- [ ] T009 [US3] Write `test_human_ops_verbs_absent_from_runner_loop` in `test_flow.py`: read `core.md`; assert `"flow reply"`, `"flow reopen"`, `"flow list"` are NOT substrings; assert all 8 runner verbs (`"flow add"`, `"flow next"`, `"flow context"`, `"flow note"`, `"flow done"`, `"flow escalate"`, `"flow split"`, `"flow decide"`) ARE present as substrings (Slice C)
-- [ ] T010 [US3] Run `pytest test_flow.py::test_human_ops_verbs_absent_from_runner_loop` — confirm GREEN; then run `pytest test_flow.py` — confirm all prior tests still pass (Slice C gate)
-- [ ] T011 [US3] Write `test_hld009_verify_invariant` in `test_flow.py`: function docstring cites `"HLD-009 VERIFY"` and the full invariant text `"runners use only the listed verbs; no direct database access; reply, reopen, and list are human/ops-facing and not part of the runner loop"`; assert `core.md` does not contain `"sqlite3"` or `".db"` as direct file references; assert only runner verbs appear as `"flow <verb>"` commands in `core.md` (Slice D)
-- [ ] T012 [US3] Run `pytest test_flow.py::test_hld009_verify_invariant` — confirm GREEN; then run `pytest test_flow.py` — confirm all prior tests still pass (Slice D gate)
+- [x] T007 [P] [US3] Confirm `test_human_ops_verbs_absent_from_runner_loop` is absent from `test_flow.py` (RED gate: grep returns nothing)
+- [x] T008 [P] [US3] Confirm `test_hld009_verify_invariant` is absent from `test_flow.py` (RED gate: grep returns nothing)
+- [x] T009 [US3] Write `test_human_ops_verbs_absent_from_runner_loop` in `test_flow.py`: read `core.md`; assert `"flow reply"`, `"flow reopen"`, `"flow list"` are NOT substrings; assert all 8 runner verbs (`"flow add"`, `"flow next"`, `"flow context"`, `"flow note"`, `"flow done"`, `"flow escalate"`, `"flow split"`, `"flow decide"`) ARE present as substrings (Slice C)
+- [x] T010 [US3] Run `pytest test_flow.py::test_human_ops_verbs_absent_from_runner_loop` — confirm GREEN; then run `pytest test_flow.py` — confirm all prior tests still pass (Slice C gate)
+- [x] T011 [US3] Write `test_hld009_verify_invariant` in `test_flow.py`: function docstring cites `"HLD-009 VERIFY"` and the full invariant text `"runners use only the listed verbs; no direct database access; reply, reopen, and list are human/ops-facing and not part of the runner loop"`; assert `core.md` does not contain `"sqlite3"` or `".db"` as direct file references; assert only runner verbs appear as `"flow <verb>"` commands in `core.md` (Slice D)
+- [x] T012 [US3] Run `pytest test_flow.py::test_hld009_verify_invariant` — confirm GREEN; then run `pytest test_flow.py` — confirm all prior tests still pass (Slice D gate)
 
 ---
 
@@ -77,9 +77,9 @@ invariant by ID and assert its structural guarantees (SC-003 — Slice D).
 
 **Purpose**: Final SC-005 regression gate — all prior + all new tests pass together.
 
-- [ ] T013 Run `pytest test_flow.py` — confirm all new tests and all 47 prior tests pass (total ≥ 50); this is the SC-005 gate
-- [ ] T014 [P] Review test names in `test_flow.py`: confirm `test_runner_verb_contracts`, `test_human_ops_verbs_absent_from_runner_loop`, `test_hld009_verify_invariant` are present and named exactly as specified
-- [ ] T015 Update `specs/017-cli-contract/plan.md` Agent Context between `<!-- SPECKIT START -->` and `<!-- SPECKIT END -->` markers to reflect tasks phase complete
+- [x] T013 Run `pytest test_flow.py` — confirm all new tests and all 47 prior tests pass (total ≥ 50); this is the SC-005 gate
+- [x] T014 [P] Review test names in `test_flow.py`: confirm `test_runner_verb_contracts`, `test_human_ops_verbs_absent_from_runner_loop`, `test_hld009_verify_invariant` are present and named exactly as specified
+- [x] T015 Update `specs/017-cli-contract/plan.md` Agent Context between `<!-- SPECKIT START -->` and `<!-- SPECKIT END -->` markers to reflect tasks phase complete
 
 ---
 

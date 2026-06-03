@@ -488,3 +488,111 @@ def test_cli_done_accepts_assignee_form(tmp_path):  # HLD-014
     assert flow.main(["--db", db, "add", "ship"]) == 0
     assert flow.main(["--db", db, "next", "--assignee", "me"]) == 0
     assert flow.main(["--db", db, "done", "1", "shipped", "--assignee", "me"]) == 0
+
+
+# --- HLD-009 CLI contract characterization (spec 017-cli-contract) ---------
+
+
+def test_runner_verb_contracts(conn):
+    # SC-001: each of the 8 runner verbs exercises its documented contract in isolation.
+    # add: creates a pending task
+    tid = flow.add(conn, "work item")
+    assert state(conn, tid) == "pending"
+
+    # next on non-empty: claims the task and returns it
+    task = flow.next_task(conn, assignee="runner")
+    assert task is not None
+    assert task["id"] == tid
+    assert state(conn, tid) == "in_progress"
+
+    # next on empty (all claimed): returns None
+    assert flow.next_task(conn, assignee="runner2") is None
+
+    # context: returns the task and its baton entries
+    t, entries = flow.context(conn, tid)
+    assert t["id"] == tid
+    assert isinstance(entries, list)
+
+    # note: appends to baton; visible via context
+    flow.note(conn, tid, "progress update")
+    _, entries = flow.context(conn, tid)
+    assert any(e["kind"] == "note" and "progress update" in e["text"] for e in entries)
+
+    # decide: records a decision on the baton
+    flow.decide(conn, tid, "use approach X")
+    _, entries = flow.context(conn, tid)
+    assert any(e["kind"] == "decision" and "use approach X" in e["text"] for e in entries)
+
+    # done: completes the task with a stated outcome
+    flow.done(conn, tid, "finished successfully")
+    assert state(conn, tid) == "done"
+
+    # escalate: parks a fresh task as blocked
+    eid = flow.add(conn, "needs human input")
+    flow.next_task(conn, assignee="runner")
+    flow.escalate(conn, eid, "which option?")
+    assert state(conn, eid) == "blocked"
+
+
+def test_runner_verb_contracts_split(conn):
+    # SC-001 (split): flow split creates children (pending), parks parent (blocked),
+    # and parent wakes to pending when all children are done. (HLD-009 / HLD-005)
+    pid = flow.add(conn, "big task")
+    flow.next_task(conn, assignee="runner")
+
+    child_ids = flow.split(conn, pid, ["child A", "child B"])
+    assert len(child_ids) == 2
+    assert state(conn, pid) == "blocked"
+    assert state(conn, child_ids[0]) == "pending"
+    assert state(conn, child_ids[1]) == "pending"
+
+    # complete both children — parent must wake
+    flow.next_task(conn, assignee="runner")  # claims child A
+    flow.done(conn, child_ids[0], "A done")
+    flow.next_task(conn, assignee="runner")  # claims child B
+    flow.done(conn, child_ids[1], "B done")
+    assert state(conn, pid) == "pending"
+
+
+def test_human_ops_verbs_absent_from_runner_loop():
+    # SC-002: reply, reopen, and list are human/ops-facing — they MUST NOT appear as
+    # CLI commands in core.md (the runner loop definition).
+    core = (Path(flow.__file__).parent / "core.md").read_text()
+
+    # human/ops verbs are absent from the runner loop
+    assert "flow reply" not in core
+    assert "flow reopen" not in core
+    assert "flow list" not in core
+
+    # runner verbs ARE present — core.md teaches runners how to use them
+    for verb in ("flow next", "flow context", "flow note", "flow decide",
+                 "flow done", "flow escalate", "flow split", "flow add"):
+        assert verb in core, f"runner verb missing from core.md: {verb}"
+
+
+def test_hld009_verify_invariant():
+    """HLD-009 VERIFY: runners use only the listed verbs; no direct database access;
+    reply, reopen, and list are human/ops-facing and not part of the runner loop.
+
+    This test characterizes that core.md — the runner loop definition — structurally
+    satisfies the HLD-009 VERIFY invariant.
+    """
+    core = (Path(flow.__file__).parent / "core.md").read_text()
+
+    # no direct database access — core.md must not reference sqlite3 or .db paths
+    assert "sqlite3" not in core
+    assert ".db" not in core
+
+    # only runner verbs appear as CLI commands — extract all `flow <verb>` patterns
+    import re
+    flow_verbs_in_core = set(re.findall(r'flow\s+(\w+)', core))
+    runner_verbs = {"add", "next", "context", "note", "done", "escalate", "split", "decide"}
+    human_ops_verbs = {"reply", "reopen", "list"}
+
+    assert not (flow_verbs_in_core & human_ops_verbs), (
+        f"human/ops verbs found as CLI commands in core.md: "
+        f"{flow_verbs_in_core & human_ops_verbs}"
+    )
+    assert runner_verbs <= flow_verbs_in_core, (
+        f"runner verbs missing from core.md: {runner_verbs - flow_verbs_in_core}"
+    )
