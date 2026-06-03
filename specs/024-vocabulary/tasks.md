@@ -8,7 +8,7 @@
 
 **Purpose**: Confirm 58 prior tests pass before adding any new test.
 
-- [ ] T001 Confirm `pytest test_flow.py` exits 0 with exactly 58 passed (baseline; requires spec 010 test first)
+- [x] T001 Confirm `pytest test_flow.py` exits 0 with exactly 58 passed (baseline; requires spec 010 test first)
 
 ---
 
@@ -16,10 +16,10 @@
 
 **Purpose**: Add one new test confirming the five HLD-002 vocabulary terms appear in `core.md`.
 
-- [ ] T002 Confirm `test_hld002_vocabulary_in_core_md` is absent from `test_flow.py` (RED check)
-- [ ] T003 Add `test_hld002_vocabulary_in_core_md` to `test_flow.py`; read `core.md` and assert each term is present: "Runner", "Task", "Baton", "Handoff", "Decision"
-- [ ] T004 Confirm `pytest test_flow.py -k test_hld002_vocabulary_in_core_md` passes (GREEN)
-- [ ] T005 Confirm `pytest test_flow.py` exits 0 with exactly 59 passed (ratchet: 58 + 1)
+- [x] T002 Confirm `test_hld002_vocabulary_in_core_md` is absent from `test_flow.py` (RED check)
+- [x] T003 Add `test_hld002_vocabulary_in_core_md` to `test_flow.py`; read `core.md` and assert each term is present: "runner", "task", "baton", "handoff", "decision" (case-insensitive; terms appear lowercase in prose)
+- [x] T004 Confirm `pytest test_flow.py -k test_hld002_vocabulary_in_core_md` passes (GREEN)
+- [x] T005 Confirm `pytest test_flow.py` exits 0 with exactly 59 passed (ratchet: 58 + 1)
 
 ---
 

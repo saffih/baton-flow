@@ -65,5 +65,5 @@ vocabulary drift.
 ## Agent Context
 
 <!-- SPECKIT START -->
-Active feature plan: `specs/024-vocabulary/plan.md` (G04 — spec 002, specify + plan complete)
+Active feature plan: `specs/024-vocabulary/plan.md` (G04 — bundle complete, 59 tests)
 <!-- SPECKIT END -->

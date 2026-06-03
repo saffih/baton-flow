@@ -8,7 +8,7 @@
 
 **Purpose**: Confirm 57 prior tests pass before adding any new test.
 
-- [ ] T001 Confirm `pytest test_flow.py` exits 0 with exactly 57 passed (baseline)
+- [x] T001 Confirm `pytest test_flow.py` exits 0 with exactly 57 passed (baseline)
 
 ---
 
@@ -16,10 +16,10 @@
 
 **Purpose**: Add one new test that cites the HLD-010 VERIFY text by ID, exercising the full routing invariant end-to-end.
 
-- [ ] T002 Confirm `test_hld010_verify_invariant` is absent from `test_flow.py` (RED check)
-- [ ] T003 Add `test_hld010_verify_invariant` to `test_flow.py` with docstring citing `"HLD-010 VERIFY"` and full text; assert backward compat (no session), session bind + affinity, and fallback
-- [ ] T004 Confirm `pytest test_flow.py -k test_hld010_verify_invariant` passes (GREEN)
-- [ ] T005 Confirm `pytest test_flow.py` exits 0 with exactly 58 passed (ratchet: 57 + 1)
+- [x] T002 Confirm `test_hld010_verify_invariant` is absent from `test_flow.py` (RED check)
+- [x] T003 Add `test_hld010_verify_invariant` to `test_flow.py` with docstring citing `"HLD-010 VERIFY"` and full text; assert backward compat (no session), session bind + affinity, and fallback
+- [x] T004 Confirm `pytest test_flow.py -k test_hld010_verify_invariant` passes (GREEN)
+- [x] T005 Confirm `pytest test_flow.py` exits 0 with exactly 58 passed (ratchet: 57 + 1)
 
 ---
 

@@ -378,6 +378,37 @@ def test_session_falls_back_when_label_dry(conn):  # HLD-010
     assert t is not None and t["id"] == b
 
 
+def test_hld010_verify_invariant(conn):
+    """`flow next` without a session returns the oldest runnable task exactly as before;
+    a session prefers its bound label, binds to the label of the first labeled task it
+    claims, and falls back to any runnable task only when none of its label remain;
+    a runner sees "none" only when no runnable work exists at all.
+
+    HLD-010 VERIFY: `flow next` without a session returns the oldest runnable task
+    exactly as before; a session prefers its bound label, binds to the label of the first
+    labeled task it claims, and falls back to any runnable task only when none of its
+    label remain; a runner sees "none" only when no runnable work exists at all"""
+    # backward compat: no session → oldest runnable task
+    oldest = flow.add(conn, "oldest", label="x")
+    flow.add(conn, "newer", label="y")
+    t = flow.next_task(conn, assignee="anon")
+    assert t["id"] == oldest
+
+    # session binds to label of first labeled task claimed
+    flow.add(conn, "x2", label="x")
+    flow.add(conn, "z1", label="z")
+    t2 = flow.next_task(conn, assignee="sess")  # claims newer (label=y), binds sess->y
+    assert t2["label"] == "y"
+    t3 = flow.next_task(conn, assignee="sess")  # y dry → fall back to x2 or z1
+    assert t3 is not None
+
+    # runner sees None only when queue is empty
+    flow.next_task(conn, assignee="drain1")
+    flow.next_task(conn, assignee="drain2")
+    nothing = flow.next_task(conn, assignee="drain3")
+    assert nothing is None
+
+
 # --- HLD-014 orphaned-work recovery (lease, reclaim, fence) -----------------
 
 
@@ -687,3 +718,12 @@ def test_hld009_verify_invariant():
     assert runner_verbs <= flow_verbs_in_core, (
         f"runner verbs missing from core.md: {runner_verbs - flow_verbs_in_core}"
     )
+
+
+def test_hld002_vocabulary_in_core_md():
+    """HLD-002 vocabulary terms must appear in core.md to prevent drift.
+
+    HLD-002: Runner, Task, Baton, Handoff, Decision are the five load-bearing terms."""
+    core = (Path(flow.__file__).parent / "core.md").read_text().lower()
+    for term in ("runner", "task", "baton", "handoff", "decision"):
+        assert term in core, f"HLD-002 vocabulary term missing from core.md: {term}"

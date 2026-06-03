@@ -71,5 +71,5 @@ The docstring cites the full VERIFY text by ID to satisfy the ratchet.
 ## Agent Context
 
 <!-- SPECKIT START -->
-Active feature plan: `specs/023-work-routing/plan.md` (G04 — spec 010, specify + plan complete)
+Active feature plan: `specs/023-work-routing/plan.md` (G04 — spec 010, implementation complete)
 <!-- SPECKIT END -->
