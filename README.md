@@ -3,13 +3,28 @@
 Context, intent, and decisions that survive every handoff between AI sessions.
 
 Baton Flow keeps work continuous across AI-assisted sessions. You create tasks; a
-**runner** (an AI session — Claude now, Devin/Codex later — or you) picks one up and
+**runner** (an AI session, or you) picks one up and
 writes everything it learns onto a **baton**, a per-task document that travels from
 runner to runner so nothing is lost. When a runner can't finish — it needs a human
 call, or the work must be split — it **hands off** and moves to the next task. The work
 waits; the session never idles.
 
+It exists to kill three specific pains:
+
+1. **Context loss** between AI sessions on multi-step work.
+2. **No visibility** into what the AI is doing while it works.
+3. **No way to steer** without starting over.
+
+The baton solves all three: it *is* the durable context, it's readable at any moment,
+and you steer by replying to it.
+
 The design is the single source of truth: see **[HLD.md](HLD.md)**.
+
+## What it is not
+
+Deliberately excluded (HLD-011): Unix-socket task delivery, web UI / HTTP API, health
+daemons, connection pools, environment staging, and migration tooling. These were
+stripped to keep the loop lean. Adding them requires an HLD amendment.
 
 ## Layout
 

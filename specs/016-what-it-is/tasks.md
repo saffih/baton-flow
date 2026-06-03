@@ -20,7 +20,7 @@ description: "Task list for What It Is (HLD-001) — README.md + core.md documen
 **Purpose**: No new project structure needed — brownfield doc spec against existing files.
 This phase is a no-op; real work begins in Phase 2.
 
-- [ ] T001 Verify baseline: run `pytest test_flow.py` and confirm 45 tests pass
+- [x] T001 Verify baseline: run `pytest test_flow.py` and confirm 45 tests pass
 
 ---
 
@@ -38,9 +38,9 @@ and `README.md`.
 
 > **TDD**: Write T002 (test) first and confirm it fails. Then fix (T003). Then verify (T004).
 
-- [ ] T002 In `test_flow.py`, add `test_ai_agnostic_readme`: assert `README.md` contains none of `["Claude", "Devin", "Codex", "GPT", "Gemini"]` — confirm test is RED before proceeding
-- [ ] T003 In `README.md`, replace `"an AI session — Claude now, Devin/Codex later — or you"` with `"an AI session, or you"` — make T002 green
-- [ ] T004 Run `pytest test_flow.py` — all 46 tests (45 prior + T002) must pass; no regressions
+- [x] T002 In `test_flow.py`, add `test_ai_agnostic_readme`: assert `README.md` contains none of `["Claude", "Devin", "Codex", "GPT", "Gemini"]` — confirm test is RED before proceeding
+- [x] T003 In `README.md`, replace `"an AI session — Claude now, Devin/Codex later — or you"` with `"an AI session, or you"` — make T002 green
+- [x] T004 Run `pytest test_flow.py` — all 46 tests (45 prior + T002) must pass; no regressions
 
 **Checkpoint**: Constitution Principle III gate is green. User story work can begin.
 
@@ -54,15 +54,15 @@ and `README.md`.
 **Independent Test**: After T005–T007, a human reading only `README.md` can answer:
 (1) What is a baton? (2) What three pains does it solve? (3) Who is the runner?
 
-- [ ] T005 [US1] In `README.md`, add an explicit three-pains paragraph after the opening
+- [x] T005 [US1] In `README.md`, add an explicit three-pains paragraph after the opening
   description, lifted verbatim from HLD-001:
   - "Context loss between AI sessions on multi-step work."
   - "No visibility into what the AI is doing while it works."
   - "No way to steer without starting over."
   Add a closing sentence: "The baton solves all three: it is the durable context,
   readable at any moment, and you steer by replying to it."
-- [ ] T006 [P] [US1] Run `pytest test_flow.py` — all 46 tests still pass
-- [ ] T007 [US1] Manual spot-check: re-read the README opening and confirm the three
+- [x] T006 [P] [US1] Run `pytest test_flow.py` — all 46 tests still pass
+- [x] T007 [US1] Manual spot-check: re-read the README opening and confirm the three
   pains are present and match SC-001 criteria
 
 **Checkpoint**: US1 satisfied — new user onboarding complete.
@@ -79,14 +79,14 @@ routing rule without inference.
 
 > **TDD**: T008 adds the assertion; confirm it fails on the current core.md before T009.
 
-- [ ] T008 [US2] In `test_flow.py`, add `test_binary_reply_rule_in_core_md`: assert
+- [x] T008 [US2] In `test_flow.py`, add `test_binary_reply_rule_in_core_md`: assert
   `core.md` contains the string `"about this task"` AND `"new task"` in the same
   paragraph — confirm RED before proceeding
-- [ ] T009 [US2] In `core.md`, in the "On a woken task" section, add one sentence
+- [x] T009 [US2] In `core.md`, in the "On a woken task" section, add one sentence
   before the bullet list: "A reply **about this task** appends to the baton and
   unblocks it; a reply about anything else becomes a new task — the original stays
   blocked." — make T008 green
-- [ ] T010 [US2] Run `pytest test_flow.py` — all 47 tests (46 + T008) pass
+- [x] T010 [US2] Run `pytest test_flow.py` — all 47 tests (46 + T008) pass
 
 **Checkpoint**: US2 satisfied — runner contract fully explicit.
 
@@ -100,13 +100,13 @@ A contributor knows what is deliberately excluded before proposing a change.
 **Independent Test**: After T011–T013, `README.md` names at least the HLD-011
 stripped-scope categories (sockets, web UI, health daemons, migration tooling).
 
-- [ ] T011 [US3] In `README.md`, add a "What it is not" section (brief) citing the
+- [x] T011 [US3] In `README.md`, add a "What it is not" section (brief) citing the
   HLD-011 stripped-scope list: no Unix-socket delivery, no web UI / HTTP API, no
   health daemons, no connection pools, no migration tooling — deliberately excluded.
   One sentence of rationale: "These were removed to keep the loop lean; adding them
   requires an HLD amendment."
-- [ ] T012 [P] [US3] Run `pytest test_flow.py` — all 47 tests still pass
-- [ ] T013 [US3] Manual spot-check: re-read README and confirm stripped-scope note is
+- [x] T012 [P] [US3] Run `pytest test_flow.py` — all 47 tests still pass
+- [x] T013 [US3] Manual spot-check: re-read README and confirm stripped-scope note is
   present and matches SC-001 contributor test
 
 **Checkpoint**: US3 satisfied — scope boundaries documented.
@@ -117,11 +117,11 @@ stripped-scope categories (sockets, web UI, health daemons, migration tooling).
 
 **Purpose**: Final suite pass, cross-check all SCs, confirm no regressions.
 
-- [ ] T014 [P] Run `pytest test_flow.py -v` — all 47 tests pass, output clean
-- [ ] T015 [P] Run `python3 -m py_compile flow.py` — no syntax errors (sanity check)
-- [ ] T016 Verify SC-004: `pytest test_flow.py -k "agnostic"` — both core.md and
+- [x] T014 [P] Run `pytest test_flow.py -v` — all 47 tests pass, output clean
+- [x] T015 [P] Run `python3 -m py_compile flow.py` — no syntax errors (sanity check)
+- [x] T016 Verify SC-004: `pytest test_flow.py -k "agnostic"` — both core.md and
   README.md pass the AI-agnostic assertion
-- [ ] T017 Review final `README.md` against all 8 FRs — mark each ✅ or ❌; no ❌
+- [x] T017 Review final `README.md` against all 8 FRs — mark each ✅ or ❌; no ❌
   allowed before closing the feature
 
 ---

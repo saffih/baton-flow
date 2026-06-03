@@ -257,6 +257,26 @@ def test_loop_contract_names_no_specific_ai():
         assert vendor not in blob, f"agnostic contract names a specific AI: {vendor}"
 
 
+def test_binary_reply_rule_in_core_md():
+    # HLD-007 / FR-005: core.md must state the binary reply routing rule as an
+    # explicit invariant sentence — both branches named, original-stays-blocked stated.
+    root = Path(flow.__file__).parent
+    text = (root / "core.md").read_text()
+    assert "leaves the original blocked" in text, (
+        "core.md missing explicit binary reply invariant "
+        "(both branches must be stated; 'leaves the original blocked' is the required form)"
+    )
+
+
+def test_ai_agnostic_readme():
+    # HLD-003 / FR-008: README.md is user-facing documentation and must not name
+    # specific AI systems — it should say "runner" or "AI session", never a brand.
+    root = Path(flow.__file__).parent
+    readme = (root / "README.md").read_text().lower()
+    for vendor in ("claude", "devin", "codex", "openai", "anthropic", "gpt", "gemini"):
+        assert vendor not in readme, f"README.md names a specific AI system: {vendor}"
+
+
 # --- the regression ratchet, self-enforcing --------------------------------
 
 

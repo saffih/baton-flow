@@ -32,6 +32,9 @@ Repeat forever:
 
 When `flow next` hands you a previously-parked task, re-read the baton and decide:
 
+A reply **about this task** appends to the baton and unblocks it; a reply about anything
+else becomes a new task and leaves the original blocked (HLD-007).
+
 - The reply is **about this task** → continue and finish it.
 - The reply is **new scope** → `flow add "<new task>"`, then finish or re-park this one.
 - The work is now **moot** → `flow done <id> "<why it's already resolved>"`.
