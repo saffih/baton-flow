@@ -7,7 +7,7 @@ by existing tests. One new test needed: SC-003 (HLD-007 VERIFY invariant citatio
 
 ## Phase 1: Setup — Baseline
 
-- [ ] T001 Run `pytest test_flow.py` and confirm exactly 54 tests pass — Slice A gate
+- [ ] T001 Run `pytest test_flow.py` and confirm exactly 55 tests pass — Slice A gate
 
 ---
 
@@ -23,7 +23,7 @@ by existing tests. One new test needed: SC-003 (HLD-007 VERIFY invariant citatio
 
 ## Phase N: Polish
 
-- [ ] T005 Run `pytest test_flow.py` — confirm 55 total tests pass (SC-004 gate)
+- [ ] T005 Run `pytest test_flow.py` — confirm 56 total tests pass (SC-004 gate)
 - [ ] T006 Update `specs/021-human-in-loop/plan.md` Agent Context to reflect implementation complete
 
 ---

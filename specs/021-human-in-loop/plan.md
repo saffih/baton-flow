@@ -18,7 +18,7 @@ covered by existing tests. One new test needed: SC-003 (HLD-007 VERIFY invariant
 
 **Language/Version**: Python 3.x  
 **Primary Dependencies**: pytest, `flow.py`, `core.md` (brownfield)  
-**Testing**: All new tests in `test_flow.py`; baseline 54 green tests (after specs 004+005+006)  
+**Testing**: All new tests in `test_flow.py`; baseline 55 green tests (after specs 004+005+006)  
 **Constraints**: SC-004 regression, Principle IV TDD, no source/schema changes
 
 ---

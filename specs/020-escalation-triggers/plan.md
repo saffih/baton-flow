@@ -18,7 +18,7 @@ Two new tests needed: SC-001 (question on baton) and SC-002 (four triggers in co
 
 **Language/Version**: Python 3.x  
 **Primary Dependencies**: pytest, `flow.py`, `core.md` (brownfield)  
-**Testing**: All new tests in `test_flow.py`; baseline 52 green tests (after specs 004+005)  
+**Testing**: All new tests in `test_flow.py`; baseline 53 green tests (after specs 004+005)  
 **Constraints**: SC-004 regression, Principle IV TDD, no source/schema changes
 
 ---

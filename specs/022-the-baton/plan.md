@@ -18,7 +18,7 @@ invariant citation by ID).
 
 **Language/Version**: Python 3.x  
 **Primary Dependencies**: pytest, `flow.py` (brownfield)  
-**Testing**: All new tests in `test_flow.py`; baseline 55 green tests (after specs 004–007)  
+**Testing**: All new tests in `test_flow.py`; baseline 56 green tests (after specs 004–007)  
 **Constraints**: SC-004 regression, Principle IV TDD, no source/schema changes
 
 ---
