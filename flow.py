@@ -102,7 +102,7 @@ def _migrate(conn):
     earlier version is missing newer columns. Add them idempotently.
     """
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()}
-    if "label" not in cols:  # renamed from the old `type` column
+    if "label" not in cols:  # label column added to replace the old `type` column; pre-existing rows get NULL
         conn.execute("ALTER TABLE tasks ADD COLUMN label TEXT")
     if "reclaim_count" not in cols:  # HLD-014
         conn.execute("ALTER TABLE tasks ADD COLUMN reclaim_count INTEGER NOT NULL DEFAULT 0")
@@ -381,11 +381,17 @@ def done(conn, task_id, outcome, session=None):
 
 
 def reply(conn, task_id, text):
-    """Human answers a blocked task. Records the reply on the baton, closes the
-    open escalation, and wakes the task. The runner decides on pickup whether the
-    reply is about this task (continue) or new scope (a fresh `add`)."""
+    """Human answers a blocked task or signals premature completion on a done task.
+
+    On a blocked task: records the reply, closes the open escalation, and wakes
+    the task. The runner decides on pickup whether the reply is about this task
+    (continue) or new scope (a fresh `add`).
+
+    On a done task: reopens it to pending (late reply — HLD-004/HLD-007). The
+    runner re-reads the baton and decides whether to continue, add new scope, or
+    re-close."""
     with _tx(conn):
-        _task(conn, task_id)
+        t = _task(conn, task_id)
         esc = conn.execute(
             "SELECT id FROM escalations WHERE task_id=? AND answer IS NULL ORDER BY id LIMIT 1",
             (task_id,),
@@ -396,7 +402,11 @@ def reply(conn, task_id, text):
                 (text, now(), esc["id"]),
             )
         _append(conn, task_id, "reply", text)
-        _maybe_wake(conn, task_id)
+        if t["state"] == "done":
+            _set_state(conn, task_id, "pending")
+            _append(conn, task_id, "system", "reopened by late reply")
+        else:
+            _maybe_wake(conn, task_id)
     project(conn, task_id)
 
 

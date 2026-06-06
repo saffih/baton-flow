@@ -115,8 +115,9 @@ subsequent changes.
 **Changes**:
 1. In the "On a woken task" section of `core.md`, add one sentence before the bullet
    list explicitly stating the routing invariant:
-   "A reply **about this task** appends to the baton and unblocks it; a reply about
-   anything else becomes a new task — the original stays blocked."
+   "A reply is already on the baton and the escalation has been resolved. A reply
+   **about this task** means continue this task; a reply about anything else becomes
+   a new related task and the runner then handles the original task explicitly."
 2. Run full suite. All green.
 
 **Gate**: Full suite green. FR-005 satisfied. The invariant matches the HLD-007 VERIFY

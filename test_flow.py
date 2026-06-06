@@ -225,7 +225,9 @@ def test_cli_roundtrip(tmp_path, capsys):
 
 
 def test_context_survives_markdown_deletion(conn, tmp_path):
-    # HLD-003 / HLD-008: SQLite is the source of truth; markdown is one-way.
+    """HLD-003 VERIFY: SQLite is the only source of truth; markdown is a one-way
+    projection, never an input; the loop depends only on the CLI + text and names
+    no specific AI"""
     # Deleting the projection must not lose data — context() reads the DB.
     tid = flow.add(conn, "task")
     flow.note(conn, tid, "important finding")
@@ -259,12 +261,14 @@ def test_loop_contract_names_no_specific_ai():
 
 def test_binary_reply_rule_in_core_md():
     # HLD-007 / FR-005: core.md must state the binary reply routing rule as an
-    # explicit invariant sentence — both branches named, original-stays-blocked stated.
+    # explicit invariant sentence — both branches named, with explicit related-task
+    # creation and original-task handling stated.
     root = Path(flow.__file__).parent
     text = (root / "core.md").read_text()
-    assert "leaves the original blocked" in text, (
+    assert "new related" in text and "flow add" in text
+    assert "finish, continue, or re-park this one explicitly" in text, (
         "core.md missing explicit binary reply invariant "
-        "(both branches must be stated; 'leaves the original blocked' is the required form)"
+        "(both branches must be stated; explicit original-task handling is required)"
     )
 
 
@@ -298,10 +302,43 @@ def test_every_high_risk_invariant_has_a_test():
     assert not missing, f"HIGH-risk HLD invariants with no test: {missing}"
 
 
+def test_high_risk_verify_texts_present_in_tests():
+    """Every HIGH-risk HLD section's HLD-VERIFY text must appear verbatim
+    (whitespace-normalised) somewhere in this test file — typically in a test
+    docstring. Catches silent drift when HLD.md is updated but test docstrings
+    are not updated to match."""
+    hld_text = (Path(flow.__file__).parent / "HLD.md").read_text()
+
+    def _n(s):
+        return re.sub(r"\s+", " ", s).strip().rstrip(".")
+
+    verify_map = {}
+    cur, is_high = None, False
+    for line in hld_text.splitlines():
+        m = re.match(r"^## (HLD-\d+)\b", line)
+        if m:
+            cur, is_high = m.group(1), False
+        elif line.startswith("HLD-RISK: HIGH") and cur:
+            is_high = True
+        elif line.startswith("HLD-VERIFY:") and is_high and cur:
+            verify_map[cur] = line[len("HLD-VERIFY:"):].strip()
+
+    tests_norm = _n(Path(__file__).read_text())
+    missing = [hid for hid, vtext in verify_map.items() if _n(vtext) not in tests_norm]
+    assert not missing, (
+        "HIGH-risk HLD-VERIFY texts not present in test file — add a docstring "
+        f"quoting the HLD-VERIFY line verbatim for: {missing}"
+    )
+
+
 # --- HLD-013 concurrency and durability ------------------------------------
 
 
 def test_connection_hardening(tmp_path):  # HLD-013
+    """HLD-013 VERIFY: concurrent `flow next` calls claim each task at most once (the
+    claim takes the write lock before it reads the queue); every CLI operation is one
+    all-or-nothing transaction (a crash leaves no partial state); the connection runs
+    WAL + busy_timeout + synchronous=NORMAL"""
     c = flow.connect(tmp_path / "h.db")
     assert c.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
     assert c.execute("PRAGMA busy_timeout").fetchone()[0] >= 1000
@@ -434,6 +471,12 @@ def test_migration_adds_columns_to_old_db(tmp_path):  # HLD-013 / HLD-014
 
 
 def test_orphaned_task_reclaimed(conn):  # HLD-014
+    """HLD-014 VERIFY: a task whose session has been silent past the lease TTL is
+    reclaimed to pending — in_progress only, never blocked — recording the reason
+    and incrementing reclaim_count; after a reclaim threshold it is escalated instead
+    of requeued; done/escalate/split by a session that no longer holds a session-owned
+    task are rejected; note/decide/reply stay multi-writer; reclaim runs under the
+    claim's BEGIN IMMEDIATE"""
     tid = flow.add(conn, "work")
     flow.next_task(conn, assignee="alice")        # alice claims
     _age(conn, tid, flow.LEASE_TTL + 10)          # alice goes silent
@@ -603,8 +646,9 @@ def test_human_ops_verbs_absent_from_runner_loop():
 
 def test_hld004_verify_invariant(conn):
     """HLD-004 VERIFY: only four states exist; a task cannot be done with unfinished
-    children; done is reopenable; blocked wakes to pending only when all dependencies
-    resolve."""
+    children; done is reopenable via reopen() or a late reply(); blocked wakes to pending
+    only when all dependencies resolve; the done/escalate/split guard is on dependencies
+    (blocked check), not on prior state — agents may operate from any non-blocked state"""
     # only four states exist
     assert flow.STATES == ("pending", "in_progress", "blocked", "done")
     assert len(flow.STATES) == 4
@@ -627,7 +671,8 @@ def test_hld004_verify_invariant(conn):
 
 def test_hld005_verify_invariant(conn):
     """HLD-005 VERIFY: escalate and split both park the task as blocked and free the
-    runner; a task is runnable only when it has no unmet dependencies."""
+    runner; the guard is that the task must not be done (not: must be in_progress);
+    a task is runnable only when it has no unmet dependencies"""
     # escalate parks the task as blocked and frees the runner
     task_a = flow.add(conn, "task A")
     task_b = flow.add(conn, "task B")
@@ -664,9 +709,11 @@ def test_escalation_triggers_in_core_md():
 
 
 def test_hld007_verify_invariant(conn):
-    """HLD-007 VERIFY: a human reply about the task itself appends to the baton and
-    unblocks; a reply about anything else becomes a new task and leaves the original
-    blocked."""
+    """HLD-007 VERIFY: a human reply is appended to the baton and resolves the open
+    escalation when the task is blocked; a reply to a done task reopens it to pending
+    (late reply — signals premature completion); when the task wakes, the runner either
+    continues this task or creates a new related task from the reply without silently
+    merging scopes"""
     tid = flow.add(conn, "question task")
     flow.next_task(conn, assignee="runner")
     flow.escalate(conn, tid, "which approach?")
@@ -675,6 +722,74 @@ def test_hld007_verify_invariant(conn):
     assert state(conn, tid) == "pending"
     _, entries = flow.context(conn, tid)
     assert any(e["kind"] == "reply" and "use approach A" in e["text"] for e in entries)
+
+
+def test_hld007_late_reply_reopens_done_task(conn):
+    """HLD-007 VERIFY: a reply to a done task reopens it to pending (late reply —
+    signals premature completion).
+
+    HLD-004 VERIFY: done is reopenable via reopen() or a late reply()."""
+    tid = flow.add(conn, "task")
+    flow.next_task(conn, assignee="runner")
+    flow.done(conn, tid, "seemed done")
+    assert state(conn, tid) == "done"
+    flow.reply(conn, tid, "actually you missed X")
+    assert state(conn, tid) == "pending"
+    _, entries = flow.context(conn, tid)
+    assert any(e["kind"] == "reply" and "missed X" in e["text"] for e in entries)
+    assert any(e["kind"] == "system" and "reopened by late reply" in e["text"] for e in entries)
+
+
+def test_hld007_binary_reply_branches(conn):
+    """HLD-007 VERIFY: when the task wakes, the runner either continues this task or
+    creates a new related task from the reply without silently merging scopes.
+
+    Branch A — reply is about this task: task wakes to pending, reply on baton, runner
+    continues this task.
+    Branch B — reply is new scope: runner creates a new task explicitly; original and
+    new task are independent (scopes not silently merged)."""
+    # Branch A: reply about this task → task wakes, reply visible, runner continues
+    tid_a = flow.add(conn, "task A needs clarification")
+    flow.next_task(conn, assignee="runner")
+    flow.escalate(conn, tid_a, "which approach?")
+    flow.reply(conn, tid_a, "use approach A — pertains to this task")
+    assert state(conn, tid_a) == "pending"
+    _, entries_a = flow.context(conn, tid_a)
+    assert any(e["kind"] == "reply" and "approach A" in e["text"] for e in entries_a)
+
+    # Branch B: reply is new scope → runner adds task explicitly; scopes stay separate
+    tid_b = flow.add(conn, "task B")
+    flow.next_task(conn, assignee="runner2")
+    flow.escalate(conn, tid_b, "is there related work?")
+    flow.reply(conn, tid_b, "yes — fix the login page too (new scope)")
+    assert state(conn, tid_b) == "pending"
+    # runner creates new task for new scope — does NOT merge into tid_b
+    new_tid = flow.add(conn, "fix login page")
+    assert state(conn, new_tid) == "pending"
+    # original and new task are independent
+    flow.next_task(conn, assignee="runner2")
+    flow.done(conn, tid_b, "original scope complete; new scope tracked separately")
+    assert state(conn, tid_b) == "done"
+    assert state(conn, new_tid) == "pending"
+
+
+def test_late_reply_on_done_child_parent_stays_done(conn):
+    """Characterizes the done-parent + pending-child edge case.
+
+    When flow reply reopens a done child, its done parent is NOT automatically
+    reopened. The 'no done task with unfinished children' invariant is enforced
+    at the transition to done only — not retroactively. The human decides
+    explicitly whether to flow reopen the parent. (HLD-004 RATIONALE)"""
+    parent = flow.add(conn, "parent")
+    child, = flow.split(conn, parent, ["child"])
+    flow.done(conn, child, "child done")
+    assert state(conn, parent) == "pending"
+    flow.done(conn, parent, "all done")
+    assert state(conn, parent) == "done"
+
+    flow.reply(conn, child, "child missed something")
+    assert state(conn, child) == "pending"   # child reopened
+    assert state(conn, parent) == "done"     # parent NOT auto-reopened; human decides
 
 
 def test_hld008_verify_invariant(conn, tmp_path):

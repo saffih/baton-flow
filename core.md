@@ -23,7 +23,8 @@ Repeat forever:
      to confirm first.
    - **Repeated failure** — ~3 tries, still failing → `flow escalate`, don't thrash.
    - **Too big to do now** — `flow split <id> "<child A>" "<child B>" … --assignee <me>`.
-     The parent parks until the children finish.
+     The parent parks until the children finish. Children inherit the parent's
+     `label`; `--assignee` here verifies your ownership of the parent only.
    After any handoff the task is `blocked`; go back to step 1.
 5. **Finish** — `flow done <id> "<outcome>" --assignee <me>`. (Rejected if the task still
    has unmet dependencies; resolve or hand off first.)
@@ -32,11 +33,12 @@ Repeat forever:
 
 When `flow next` hands you a previously-parked task, re-read the baton and decide:
 
-A reply **about this task** appends to the baton and unblocks it; a reply about anything
-else becomes a new task and leaves the original blocked (HLD-007).
+A reply is already on the baton and the escalation has been resolved. A reply **about this
+task** means continue this task; a reply about anything else becomes a **new related
+task** that you create explicitly with `flow add` (HLD-007).
 
 - The reply is **about this task** → continue and finish it.
-- The reply is **new scope** → `flow add "<new task>"`, then finish or re-park this one.
+- The reply is **new scope** → `flow add "<new task>"`, then finish, continue, or re-park this one explicitly.
 - The work is now **moot** → `flow done <id> "<why it's already resolved>"`.
 
 Waking is a decision, not an obligation.
@@ -47,6 +49,9 @@ Waking is a decision, not an obligation.
 - Always pass the same `--assignee <me>` you claimed with on `escalate`, `split`, and
   `done`. If you went silent and your task was reclaimed by another session, these verbs
   are refused — you no longer hold it (HLD-014). Re-claim with `flow next` instead.
+- Use `flow add --label <label>` to group tasks by subject (component, feature, topic).
+  A session that claims a labeled task binds to that label and prefers it on future
+  pickups (HLD-010).
 - Never guess past a handoff trigger — escalate.
 - Communicate every meaningful step on the baton; it is the only context the next
   runner inherits.

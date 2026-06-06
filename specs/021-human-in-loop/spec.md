@@ -7,7 +7,7 @@
 **Status**: Draft
 
 **Source HLD**: HLD-007 — `HLD-ROLE: processing`, `HLD-RISK: MEDIUM`, `HLD-SPECS: constitution`
-**HLD-VERIFY**: a human reply about the task itself appends to the baton and unblocks; a reply about anything else becomes a new task and leaves the original blocked
+**HLD-VERIFY**: a human reply is appended to the baton and resolves the open escalation; when the task wakes, the runner either continues this task or creates a new related task from the reply without silently merging scopes
 
 **Input**: HLD-007 — binary reply routing rule; steering is lossless
 
@@ -36,26 +36,28 @@ and the reply is visible on the baton.
 ### User Story 2 — Off-topic replies do not merge scope (Priority: P1)
 
 When a human's reply is about something other than the blocked task, the runner treats
-it as new scope and adds a new task. The original task stays blocked — scope is never
-silently merged.
+it as new scope and adds a new related task. The original task is then handled
+explicitly by the runner — continue, re-park, or finish — so scope is never silently
+merged and no fake dependency is implied.
 
 **Why this priority**: This is the lossless-steering invariant. If off-topic replies
 modified the original task, work would be silently mis-directed.
 
 **Independent Test**: The runner loop definition (core.md) explicitly states the binary
-routing rule: on-topic → baton + unblock; off-topic → new task, original stays blocked.
+routing rule: on-topic → continue this task from the baton; off-topic → create a new
+related task and handle the original task explicitly.
 
 **Acceptance Scenarios**:
 
-1. **Given** core.md, **When** its reply routing section is read, **Then** it states that an on-topic reply unblocks the task and an off-topic reply becomes a new task leaving the original blocked.
+1. **Given** core.md, **When** its reply routing section is read, **Then** it states that an on-topic reply means continue this task and an off-topic reply means create a new related task and handle the original task explicitly.
 
 ---
 
 ### Edge Cases
 
-- A reply always appends to the baton; the runner decides afterward whether it is on-topic or new scope.
+- A reply always appends to the baton and resolves the open escalation; the runner decides afterward whether it is on-topic or new scope.
 - Replying to a non-blocked task is permitted (the task was already running or pending); the reply is still recorded.
-- The "off-topic → new task" branch is the runner's responsibility, not system enforcement.
+- The "off-topic → new related task" branch is the runner's responsibility, not system enforcement.
 
 ---
 
@@ -63,13 +65,13 @@ routing rule: on-topic → baton + unblock; off-topic → new task, original sta
 
 ### Functional Requirements
 
-- **FR-001**: `flow reply` MUST append the reply text to the task's baton and transition a `blocked` task to `pending`.
-- **FR-002**: The runner loop documentation (core.md) MUST state the binary reply routing rule: on-topic reply unblocks; off-topic reply becomes a new task and leaves the original blocked.
+- **FR-001**: `flow reply` MUST append the reply text to the task's baton and transition a `blocked` task to `pending` by resolving the open escalation.
+- **FR-002**: The runner loop documentation (core.md) MUST state the binary reply routing rule: on-topic reply means continue this task; off-topic reply means create a new related task and handle the original task explicitly.
 
 ### Key Entities
 
 - **Reply**: Human text recorded on the baton via `flow reply`. Always appended; always visible to the next runner.
-- **Binary routing rule**: The runner's decision: is this reply about the original task (→ continue) or new scope (→ add new task)?
+- **Binary routing rule**: The runner's decision on pickup: is this reply about the original task (→ continue) or new scope (→ add a related task)?
 
 ---
 
@@ -78,14 +80,14 @@ routing rule: on-topic → baton + unblock; off-topic → new task, original sta
 ### Measurable Outcomes
 
 - **SC-001**: A test asserts that `flow reply` appends the text to the baton and transitions a blocked task to `pending`.
-- **SC-002**: A test asserts that core.md documents the binary routing rule (both branches named; "leaves the original blocked" is the required form for the off-topic branch).
-- **SC-003**: The HLD-007 VERIFY invariant ("a human reply about the task itself appends to the baton and unblocks; a reply about anything else becomes a new task and leaves the original blocked") is cited by ID in at least one test.
+- **SC-002**: A test asserts that core.md documents the binary routing rule (both branches named; `new related task` and explicit original-task handling are required forms for the off-topic branch).
+- **SC-003**: The HLD-007 VERIFY invariant ("a human reply is appended to the baton and resolves the open escalation; when the task wakes, the runner either continues this task or creates a new related task from the reply without silently merging scopes") is cited by ID in at least one test.
 - **SC-004**: All prior tests (52 at time of writing) remain green.
 
 ---
 
 ## Assumptions
 
-- `flow.py` already implements `flow reply` correctly; this spec drives characterization tests only.
-- The binary routing decision is the runner's judgment call; the system only enforces that reply appends and unblocks — it does not enforce which branch the runner takes.
+- `flow.py` already implements `flow reply` correctly; this spec drives characterization tests and documentation alignment.
+- The binary routing decision is the runner's judgment call; the system enforces append-plus-wake, not whether the runner continues this task or creates a new related task.
 - All new tests go in `test_flow.py`.

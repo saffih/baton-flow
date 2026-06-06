@@ -80,12 +80,13 @@ routing rule without inference.
 > **TDD**: T008 adds the assertion; confirm it fails on the current core.md before T009.
 
 - [x] T008 [US2] In `test_flow.py`, add `test_binary_reply_rule_in_core_md`: assert
-  `core.md` contains the string `"about this task"` AND `"new task"` in the same
+  `core.md` contains the string `"about this task"` AND `"new related task"` in the same
   paragraph — confirm RED before proceeding
 - [x] T009 [US2] In `core.md`, in the "On a woken task" section, add one sentence
-  before the bullet list: "A reply **about this task** appends to the baton and
-  unblocks it; a reply about anything else becomes a new task — the original stays
-  blocked." — make T008 green
+  before the bullet list: "A reply is already on the baton and the escalation has
+  been resolved. A reply **about this task** means continue this task; a reply
+  about anything else becomes a new related task and the runner then handles the
+  original task explicitly." — make T008 green
 - [x] T010 [US2] Run `pytest test_flow.py` — all 47 tests (46 + T008) pass
 
 **Checkpoint**: US2 satisfied — runner contract fully explicit.

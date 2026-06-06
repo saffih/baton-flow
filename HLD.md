@@ -87,7 +87,8 @@ HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,test_flow.py
-HLD-VERIFY: only four states exist; a task cannot be done with unfinished children; done is reopenable; blocked wakes to pending only when all dependencies resolve
+HLD-VERIFY: only four states exist; a task cannot be done with unfinished children; done is reopenable via reopen() or a late reply(); blocked wakes to pending only when all dependencies resolve; the done/escalate/split guard is on dependencies (blocked check), not on prior state — agents may operate from any non-blocked state
+HLD-RATIONALE: done/escalate/split do not require in_progress as a pre-condition; agents decide completion — a review or cleanup agent may mark tasks done or restructure work without formally claiming them; requiring in_progress would break valid agent patterns such as marking stale tasks done in bulk; a late reply that reopens a done child does not auto-reopen the parent — enforcing the invariant retroactively would silently undo work the human accepted as done; the delegation model puts that decision in human hands
 
 Four states. `done` is a resting state, not a grave — it can be reopened.
 
@@ -103,10 +104,22 @@ pending ──► in_progress ──► done
 - `pending` — runnable: no unmet dependencies.
 - `in_progress` — a runner is working it.
 - `blocked` — parked, waiting on a dependency (a human answer and/or child tasks).
-- `done` — finished, but reopenable.
+- `done` — finished, but reopenable. Reopen explicitly with `flow reopen`, or send `flow reply` on it — a late reply signals the task was closed prematurely and reopens it to `pending`.
 
 **The one rule that governs everything:** *a task is runnable only when it has no
 unmet dependencies.* A task cannot be `done` while it has unfinished children.
+
+**State transitions and agent autonomy.** The diagram above shows the *typical* runner
+flow. Agents may call `done`, `escalate`, or `split` from any state that is not
+`blocked` by unmet dependencies. The only hard enforcement is the dependency guard: a
+task cannot be marked `done` while it has open escalations or unfinished children.
+Prior state (`pending` vs `in_progress`) is not enforced — the `in_progress` step is
+normal but not mandatory.
+
+**Edge case: late reply on a done child.** When `flow reply` reopens a done child,
+its parent (if done) remains done — the dependency guard runs at transition time
+only, not retroactively. If the parent also needs reopening, the human does so
+explicitly with `flow reopen`. See HLD-RATIONALE for the reasoning.
 
 ## HLD-005 - The wait model (fork-join)
 
@@ -117,7 +130,8 @@ HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,test_flow.py
-HLD-VERIFY: escalate and split both park the task as blocked and free the runner; a task is runnable only when it has no unmet dependencies
+HLD-VERIFY: escalate and split both park the task as blocked and free the runner; the guard is that the task must not be done (not: must be in_progress); a task is runnable only when it has no unmet dependencies
+HLD-RATIONALE: escalate/split require only that the task is not already done; agents may restructure or park work from pending or blocked states without re-claiming; requiring in_progress would prevent valid agent restructuring and review operations
 
 Escalation and sub-tasking are **the same primitive**: a task becomes `blocked`
 because it's waiting on something, and the runner immediately moves to the next
@@ -163,16 +177,22 @@ HLD-STATUS: active
 HLD-RISK: MEDIUM
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,core.md
-HLD-VERIFY: a human reply about the task itself appends to the baton and unblocks; a reply about anything else becomes a new task and leaves the original blocked
+HLD-VERIFY: a human reply is appended to the baton and resolves the open escalation when the task is blocked; a reply to a done task reopens it to pending (late reply — signals premature completion); when the task wakes, the runner either continues this task or creates a new related task from the reply without silently merging scopes
+HLD-RATIONALE: reply() reopens done tasks because humans can signal premature completion ("you thought you were done but missed X"); the runner re-reads the baton and decides: continue, create new scope, or re-close
 
-When the human answers a blocked task, one binary question decides what happens:
+When the human answers a blocked task, the reply is always recorded on the baton and
+the open escalation is resolved. When the human replies to a `done` task, the task
+reopens to `pending` — a signal that it was closed prematurely (late reply).
+When the task wakes, one binary question decides how the runner uses that reply:
 
 > **Is the reply about this task itself?**
 >
-> - **Yes** → append it to the baton; task `blocked → pending` (re-enters the loop).
-> - **No** → it becomes a **new task**; the original stays blocked.
+> - **Yes** → continue this task using the reply that is already on the baton.
+> - **No** → create a **new related task** from the reply, then explicitly continue,
+>   re-park, or finish the original task.
 
-This keeps steering lossless and never silently merges unrelated scope into a task.
+This keeps steering lossless and never silently merges unrelated scope into a task or
+pretends a new scope is an implicit dependency.
 
 ## HLD-008 - The baton (per-task document)
 
@@ -214,7 +234,7 @@ The entire runner-facing API is small. This is the agnostic surface.
 
 | Verb | Meaning |
 |------|---------|
-| `flow add <text>` | Create a task (used by the human, and by a runner for the "No" reply branch in §7). |
+| `flow add <text> [--label <label>]` | Create a task (used by the human, and by a runner for the "No" reply branch in §7). The optional `--label` groups the task with a subject for session affinity (HLD-010). |
 | `flow next` | Get the next runnable task assigned to me (or "none"). |
 | `flow context <id>` | Read the task's baton (declared context). |
 | `flow note <id> <text>` | Append progress/finding to the baton. |
@@ -229,7 +249,7 @@ Three verbs are **human/ops-facing**, not part of the runner loop:
 
 | Verb | Meaning |
 |------|---------|
-| `flow reply <id> <text>` | Answer a blocked task (§7). Records the reply on the baton and wakes the task; the runner decides on pickup whether it's about the task or new scope. |
+| `flow reply <id> <text>` | Answer a blocked task, or signal premature completion on a `done` task (§7). Records the reply on the baton; if blocked, resolves the open escalation and wakes the task; if `done`, reopens it to `pending` (late reply). The runner decides on pickup whether to continue this task or create a new related task. |
 | `flow reopen <id>` | Move a `done` task back to `pending`. |
 | `flow list` | List all tasks with their current state. Read-only observation verb; never changes state. |
 

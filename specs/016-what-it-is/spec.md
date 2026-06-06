@@ -105,8 +105,9 @@ categories from HLD-011 so a contributor knows the boundaries before proposing a
 - **FR-004**: `core.md` MUST enumerate every CLI verb a runner is permitted to use,
   with a one-line description of each.
 - **FR-005**: `core.md` MUST state the binary reply rule explicitly: a reply that is
-  about the task unblocks it and appends to the baton; a reply that is not about the
-  task becomes a new task and leaves the original blocked (HLD-007).
+  about the task is already on the baton and lets the runner continue this task; a
+  reply that is not about the task becomes a new related task and the runner then
+  handles the original task explicitly (HLD-007).
 - **FR-006**: `core.md` MUST describe the escalate/split primitives and make clear
   that both park the task as blocked and free the runner.
 - **FR-007**: `README.md` MUST state the stripped-scope boundaries (no sockets, no

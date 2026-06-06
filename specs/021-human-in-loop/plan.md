@@ -8,9 +8,11 @@
 
 ## Summary
 
-Characterization spec for the human reply routing rule. `flow.py` and `core.md` already
-implement and document the reply unblocking and binary routing rule. SC-001 and SC-002 are
-covered by existing tests. One new test needed: SC-003 (HLD-007 VERIFY invariant citation).
+Characterization spec for the human reply routing rule. `flow.py` already implements
+reply append-plus-wake. The work here is to keep docs and tests aligned with the actual
+dependency model: off-topic replies create a new related task on pickup; they do not
+implicitly invent a new blocking dependency. SC-001 is covered by existing tests.
+SC-002 and SC-003 require doc/test alignment.
 
 ---
 
@@ -42,8 +44,8 @@ covered by existing tests. One new test needed: SC-003 (HLD-007 VERIFY invariant
 | SC | Requirement | Existing coverage | Gap |
 |---|---|---|---|
 | SC-001 | flow reply appends to baton and transitions blocked→pending | test_reply_wakes_task + test_reply_recorded_on_baton | COVERED |
-| SC-002 | core.md states binary routing rule (both branches; "leaves the original blocked") | test_binary_reply_rule_in_core_md | COVERED |
-| SC-003 | HLD-007 VERIFY invariant cited by ID in at least one test | No test cites "HLD-007 VERIFY" | Need `test_hld007_verify_invariant` |
+| SC-002 | core.md states binary routing rule (continue this task vs create new related task) | Existing test assumes stale wording | Update `test_binary_reply_rule_in_core_md` |
+| SC-003 | HLD-007 VERIFY invariant cited by ID in at least one test | Existing test cites stale invariant text | Update `test_hld007_verify_invariant` |
 | SC-004 | All 54 prior tests remain green | Baseline confirmed | No gap |
 
 ---
@@ -54,16 +56,20 @@ covered by existing tests. One new test needed: SC-003 (HLD-007 VERIFY invariant
 
 **Gate**: `pytest test_flow.py` exits 0 with exactly 54 passed.
 
-### Slice B — SC-003: HLD-007 VERIFY invariant citation
+### Slice B — SC-002/SC-003: align docs/tests to actual reply-routing semantics
 
-**Test name**: `test_hld007_verify_invariant`
+**Test names**:
+- `test_binary_reply_rule_in_core_md`
+- `test_hld007_verify_invariant`
 
-**Mechanism**: Docstring cites `"HLD-007 VERIFY"` + full invariant text. Assert:
-1. `flow.reply` appends to the baton and wakes a blocked task.
-2. The docstring of this test contains `"HLD-007 VERIFY"` to satisfy the ratchet.
+**Mechanism**:
+1. `core.md` must say the reply is already on the baton, new scope becomes a new related
+   task, and the original task is handled explicitly by the runner.
+2. The HLD-007 ratchet test cites the new invariant text and still proves reply
+   append-plus-wake behavior.
 
-Concretely: add task, escalate it (blocked), call `flow.reply`, assert state==pending and
-a reply entry appears on the baton context. The key addition is the docstring VERIFY citation.
+Concretely: update the doc assertion strings; keep the runtime characterization that a
+blocked task wakes and the reply is visible on the baton.
 
 ---
 

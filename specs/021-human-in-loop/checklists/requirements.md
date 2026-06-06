@@ -25,7 +25,7 @@
 ## Feature Readiness
 
 - [x] All functional requirements have clear acceptance criteria
-- [x] User scenarios cover primary flows (reply unblocks; off-topic stays blocked)
+- [x] User scenarios cover primary flows (reply unblocks; off-topic creates a related task and the original is handled explicitly)
 - [x] Feature meets measurable outcomes defined in Success Criteria
 - [x] No implementation details leak into specification
 
@@ -34,5 +34,5 @@
 - [x] flow.reply() confirmed in flow.py (line 383): appends reply to baton, transitions blocked→pending
 - [x] test_reply_wakes_task covers SC-001 (task state → pending after reply)
 - [x] test_reply_recorded_on_baton covers SC-001 (reply text on baton)
-- [x] test_binary_reply_rule_in_core_md covers SC-002 ("leaves the original blocked" in core.md)
+- [x] test_binary_reply_rule_in_core_md covers SC-002 (core.md names `new related task` and explicit original-task handling)
 - [x] SC-003 gap: HLD-007 VERIFY invariant not yet cited by ID in any test
