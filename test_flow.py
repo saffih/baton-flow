@@ -607,6 +607,28 @@ def test_repeated_reclaim_escalates(conn):  # HLD-014
     assert state(conn, tid) == "blocked"
 
 
+def test_reclaim_escalation_clears_assignee(conn):  # HLD-004/005 + HLD-014
+    # HLD-004/005: a task parked as blocked is unassigned — same invariant as escalate().
+    tid = flow.add(conn, "poison")
+    for _ in range(flow.RECLAIM_MAX + 1):
+        flow.next_task(conn, assignee="runner")
+        _age(conn, tid, flow.LEASE_TTL + 10)
+    flow.next_task(conn, assignee="runner2")  # triggers the escalation
+    assert state(conn, tid) == "blocked"
+    assert flow._task(conn, tid)["assignee"] is None
+
+
+def test_reclaim_escalation_keeps_label(conn):  # HLD-005 + HLD-014
+    # HLD-005: clear assignee but keep label — regression guard for reclaim path.
+    tid = flow.add(conn, "poison", label="infra")
+    for _ in range(flow.RECLAIM_MAX + 1):
+        flow.next_task(conn, assignee="runner")
+        _age(conn, tid, flow.LEASE_TTL + 10)
+    flow.next_task(conn, assignee="runner2")  # triggers the escalation
+    assert state(conn, tid) == "blocked"
+    assert flow._task(conn, tid)["label"] == "infra"
+
+
 def test_cli_done_accepts_assignee_form(tmp_path):  # HLD-014
     # core.md prescribes `--assignee <me>` on done/escalate/split; the CLI must accept it
     # (the fence verbs are the point of HLD-014 — they must not error for a compliant runner).

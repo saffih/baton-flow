@@ -196,6 +196,7 @@ def _reclaim_orphans(conn):
             )
             _append(conn, tid, "escalation", f"reclaimed {r['reclaim_count']}x without completion; escalated")
             _set_state(conn, tid, "blocked")
+            conn.execute("UPDATE tasks SET assignee=NULL WHERE id=?", (tid,))
         else:
             conn.execute(
                 "UPDATE tasks SET state='pending', assignee=NULL,"
