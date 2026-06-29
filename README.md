@@ -38,20 +38,23 @@ stripped to keep the loop lean. Adding them requires an HLD amendment.
 ```bash
 flow() { python3 flow.py "$@"; }   # or: chmod +x flow.py && ./flow.py …
 
-flow add "Ship login page"            # -> 1   (pending)
-flow split 1 "Build form" "Wire auth" # parent parks; children 2,3 pending
-flow next --assignee me               # claim the next runnable task
-flow context 2                        # read its baton
-flow note 2 "using the shared form component"
-flow escalate 2 "OAuth or password?"  # park on a human; runner moves on
-flow reply 2 "OAuth"                  # (human) answer -> task wakes
-flow done 2 "form built with OAuth"   # rejected if deps unmet
-flow backup .flow/backup.db           # SQLite-safe backup; do not copy flow.db alone
-flow check                            # SQLite integrity_check
-flow list
+flow add "Ship login page" --session me                  # -> 1   (pending)
+flow split 1 "Build form" "Wire auth" --session me       # parent parks; children 2,3 pending
+flow next --session me                                   # claim the next runnable task
+flow context 2                                           # read-only; no session required
+flow note 2 "using the shared form component" --session me
+flow escalate 2 "OAuth or password?" --session me        # park on a human; runner moves on
+flow reply 2 "OAuth" --session human                     # answer -> task wakes
+flow done 2 "form built with OAuth" --session me         # rejected if deps unmet
+flow backup .flow/backup.db                              # maintenance; no session required
+flow check                                               # maintenance; no session required
+flow list                                                # read-only; no session required
 ```
 
 State lives in `.flow/flow.db`; human-readable batons are projected to `.flow/batons/`.
+State-changing CLI verbs require `--session <name>`. `--assignee <name>` remains a
+temporary compatibility alias; supplying both with different values is rejected.
+`context`, `list`, `backup`, and `check` are exempt.
 
 ## Persistence safety
 

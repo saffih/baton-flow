@@ -226,19 +226,20 @@ The baton is *how a task went*; the report is *what was produced*.
 ## HLD-009 - The CLI contract during session/reclaim transition
 
 HLD-ID: HLD-009
-HLD-DESC: HLD-009 is in-scope api at high risk, touching cli; "the flow CLI verbs are the runner contract; named sessions are preferred while the legacy anonymous path remains temporarily allowed".
+HLD-DESC: HLD-009 is in-scope api at high risk, touching cli; "the flow CLI verbs are the runner contract; state-changing CLI verbs require named sessions while read-only and maintenance verbs remain exempt".
 HLD-ROLE: api
 HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,flow,core.md
-HLD-VERIFY: named sessions are preferred and should become mandatory later, but the legacy anonymous path remains temporarily allowed; runners use only the listed implemented verbs with no direct database access; reply is the current human answer verb; feedback, answer naming, and explicit reclaim remain tracked alignment gaps; lazy lease-TTL reclaim is the implemented reclaim path
-HLD-RATIONALE: the name a session declares is its bracelet (HLD-010) — accountability, not security. The target state is CLI-entry enforcement for every call, reads included. Transition policy C keeps the legacy anonymous path temporarily allowed so current behavior stays honest while named-session enforcement is implemented deliberately later.
+HLD-VERIFY: state-changing CLI verbs require named sessions, while read-only and maintenance verbs remain exempt; runners use only the listed implemented verbs with no direct database access; reply is the current human answer verb; feedback, answer naming, and explicit reclaim remain tracked alignment gaps; lazy lease-TTL reclaim is the implemented reclaim path
+HLD-RATIONALE: the name a session declares is its bracelet (HLD-010) — accountability, not security. The active implementation contract is CLI-entry enforcement for state-changing verbs only. `context`, `list`, `backup`, and `check` remain exempt because they do not transition task state. The broader "every call, reads included" target is not active unless a future HLD decision explicitly changes the contract.
 
-**Named sessions are preferred now and mandatory later.** A compliant invocation names its
-session (`--session <name>` or the current `--assignee <name>` compatibility spelling).
-The legacy no-session path still exists temporarily and is a known gap, not a completed
-contract. The tables below omit session flags per row for brevity.
+**Named sessions are mandatory for state-changing CLI verbs.** A state-changing CLI
+invocation names its session with primary spelling `--session <name>`; `--assignee
+<name>` remains a temporary compatibility alias. Supplying both with different values is
+rejected. Internal Python API no-session compatibility remains outside this CLI
+authorization boundary. The tables below omit session flags per row for brevity.
 
 Runner-facing (the loop):
 
@@ -281,19 +282,18 @@ is *not yet enumerated*; until it is, this set is the task/steering plus mainten
 ## HLD-010 - Work routing (preferred named sessions, soft label affinity)
 
 HLD-ID: HLD-010
-HLD-DESC: HLD-010 is in-scope architecture at high risk, touching processing; "work routing by preferred named sessions and soft label affinity during the anonymous-path transition".
+HLD-DESC: HLD-010 is in-scope architecture at high risk, touching processing; "work routing by mandatory named CLI sessions and soft label affinity".
 HLD-ROLE: architecture
 HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,test_flow.py
-HLD-VERIFY: named claims are preferred and missing-session claims remain a temporary legacy path, explicitly tracked as a gap; a session prefers its bound label, binds to the label of the first labeled task it claims, and falls back to any runnable task only when none of its label remain; a session sees none only when no runnable work exists; the declared name is durable — lazy reclaim takes the task, not the identity
-HLD-RATIONALE: the name is the bracelet — declaring a true name is the whole enrollment, there is no separate registration step. The target state rejects missing names, but transition policy C keeps the v1 anonymous path temporarily allowed until enforcement is implemented and tested.
+HLD-VERIFY: state-changing CLI claims require named sessions; internal Python no-session compatibility remains outside the CLI authorization boundary; a session prefers its bound label, binds to the label of the first labeled task it claims, and falls back to any runnable task only when none of its label remain; a session sees none only when no runnable work exists; the declared name is durable — lazy reclaim takes the task, not the identity
+HLD-RATIONALE: the name is the bracelet — declaring a true name is the whole enrollment, there is no separate registration step. The active CLI contract rejects missing names for state-changing verbs. Read-only and maintenance verbs remain exempt, and direct Python API compatibility paths are not runner authorization.
 
-A named session says `flow next --session <name>` or current compatibility spelling
-`--assignee <name>`: *"I am `<name>`; give me my next."* Named sessions are the preferred
-path and the future mandatory path. Missing-session claims still work temporarily through
-the legacy anonymous path and must stay visible as a known gap until removed deliberately.
+A named session says `flow next --session <name>`; current compatibility spelling
+`--assignee <name>` is accepted as an alias: *"I am `<name>`; give me my next."*
+Named sessions are mandatory for state-changing CLI verbs.
 
 - **Label** — a task's optional subject (component/feature/topic); reuses the existing
   column. Also the natural scope a **report** is about (HLD-016).
@@ -394,8 +394,8 @@ HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,test_flow.py
-HLD-VERIFY: lazy lease-TTL reclaim is implemented inside flow next and explicit flow reclaim is deferred; lazy reclaim returns a silent in_progress task to pending, clears assignee, records the reason, and saturates reclaim_count at RECLAIM_MAX as a permanent flaky-mark — at or past the ceiling every further orphaning escalates immediately; ownership-implying transitions by a named session that is not the current owner are rejected, while legacy anonymous/unowned paths remain temporarily operable; note/decide stay multi-writer; feedback as a creation/steering verb is deferred; lazy reclaim runs under the claim's BEGIN IMMEDIATE
-HLD-RATIONALE: named-session fencing is the target state, but transition policy C keeps the legacy anonymous path temporarily allowed (HLD-009/HLD-010). Current recovery has the lazy lease-TTL backstop inside `flow next`; explicit `flow reclaim` remains deferred so operators do not infer a see-and-act verb that the implementation does not expose yet.
+HLD-VERIFY: lazy lease-TTL reclaim is implemented inside flow next and explicit flow reclaim is deferred; lazy reclaim returns a silent in_progress task to pending, clears assignee, records the reason, and saturates reclaim_count at RECLAIM_MAX as a permanent flaky-mark — at or past the ceiling every further orphaning escalates immediately; ownership-implying transitions by a named session that is not the current owner are rejected, while internal anonymous/unowned Python API paths remain compatibility paths outside CLI authorization; note/decide stay multi-writer; feedback as a creation/steering verb is deferred; lazy reclaim runs under the claim's BEGIN IMMEDIATE
+HLD-RATIONALE: state-changing CLI verbs require named sessions (HLD-009/HLD-010). Current recovery has the lazy lease-TTL backstop inside `flow next`; explicit `flow reclaim` remains deferred so operators do not infer a see-and-act verb that the implementation does not expose yet.
 
 A session can claim a task and go non-responsive — hung, or vanished. Recovery is a
 **liveness** concern, separate from the correctness HLD-013 guarantees.
@@ -415,8 +415,8 @@ A session can claim a task and go non-responsive — hung, or vanished. Recovery
   mark never resets — a current `reply` / target `answer` resolves each escalation but a
   fresh start is a **new task** (count 0), not a reset.
 - **Fence.** `done`/`escalate`/`split` are rejected when the task is held by a *different*
-  named session. Unowned and legacy anonymous paths remain temporarily operable; this is a
-  known transition gap, not the final named-session contract.
+  named session. Direct Python API unowned and anonymous paths remain compatibility
+  behavior outside the CLI authorization boundary.
 - **Blackboard multi-writer.** `note`/`decide` are never fenced (attributed, per HLD-008).
   Target `feedback` is a deferred creation/steering verb (like `add`) — identity-gated,
   not an ownership transition — so it remains a future unfenced verb.
@@ -436,9 +436,9 @@ HLD-RATIONALE: an unwritten principle the whole system leans on is itself a stat
 The engine constrains only what **must** be true — the closed invariant set:
 
 - **dependency** — a task can't be `done` with unmet dependencies (open escalation or unfinished children); a split must have ≥1 child (no stranded parent).
-- **identity** — named sessions are the preferred and future mandatory path; the current
-  anonymous compatibility path is a tracked gap rather than the final contract
-  (HLD-009/010).
+- **identity** — state-changing CLI verbs require named sessions; `--session` is the
+  primary spelling and `--assignee` remains a compatibility alias. Direct Python API
+  no-session compatibility is outside the CLI authorization boundary (HLD-009/010).
 - **ownership** — a task held by a named session can't be transitioned by another (HLD-014).
 - **lifecycle** — the state machine is well-formed: four task states, legal transitions only (`done` can't be escalated/split; `reopen` only from `done`), one open escalation at a time, and **a `deprecated`/`obsolete` report is immutable** (HLD-016).
 - **existence** — operations target a real task/report.

@@ -838,11 +838,12 @@ def test_hld010_routing_affinity_subset(conn):
 def test_hld010_internal_api_anonymous_session_path(conn):
     """HLD-010 coverage accounting.
 
-    HLD-010 VERIFY: named claims are preferred and missing-session claims remain a
-    temporary legacy path, explicitly tracked as a gap; a session prefers its bound label,
-    binds to the label of the first labeled task it claims, and falls back to any runnable
-    task only when none of its label remain; a session sees none only when no runnable work
-    exists; the declared name is durable — lazy reclaim takes the task, not the identity
+    HLD-010 VERIFY: state-changing CLI claims require named sessions; internal Python
+    no-session compatibility remains outside the CLI authorization boundary; a session
+    prefers its bound label, binds to the label of the first labeled task it claims, and
+    falls back to any runnable task only when none of its label remain; a session sees none
+    only when no runnable work exists; the declared name is durable — lazy reclaim takes
+    the task, not the identity
 
     Implemented: label affinity, fallback routing, none-when-empty, durable identity
     (test_hld010_routing_affinity_subset, test_session_* tests).
@@ -1002,9 +1003,10 @@ def test_hld014_explicit_reclaim_deferred(conn):
     clears assignee, records the reason, and saturates reclaim_count at RECLAIM_MAX as a
     permanent flaky-mark — at or past the ceiling every further orphaning escalates
     immediately; ownership-implying transitions by a named session that is not the current
-    owner are rejected, while legacy anonymous/unowned paths remain temporarily operable;
-    note/decide stay multi-writer; feedback as a creation/steering verb is deferred; lazy
-    reclaim runs under the claim's BEGIN IMMEDIATE
+    owner are rejected, while internal anonymous/unowned Python API paths remain
+    compatibility paths outside CLI authorization; note/decide stay multi-writer; feedback
+    as a creation/steering verb is deferred; lazy reclaim runs under the claim's
+    BEGIN IMMEDIATE
 
     Implemented: lazy lease-TTL reclaim, fence, flaky-mark, escalation ceiling,
     blackboard multi-writer (test_orphaned_task_reclaimed and sibling HLD-014 tests).
@@ -1293,17 +1295,14 @@ def test_hld009_runner_contract_subset():
 def test_hld009_session_enforcement_active(tmp_path, capsys):
     """HLD-009 coverage accounting.
 
-    Raw source-HLD VERIFY text retained for the meta-test:
-    HLD-009 VERIFY: named sessions are preferred and should become mandatory later, but
-    the legacy anonymous path remains temporarily allowed; runners use only the listed
-    implemented verbs with no direct database access; reply is the current human answer
-    verb; feedback, answer naming, and explicit reclaim remain tracked alignment gaps;
-    lazy lease-TTL reclaim is the implemented reclaim path
+    HLD-009 VERIFY: state-changing CLI verbs require named sessions, while read-only and
+    maintenance verbs remain exempt; runners use only the listed implemented verbs with no
+    direct database access; reply is the current human answer verb; feedback, answer
+    naming, and explicit reclaim remain tracked alignment gaps; lazy lease-TTL reclaim is
+    the implemented reclaim path
 
     Implemented: runner verb contract, no direct DB access, human/ops verb separation,
-    and mandatory named sessions at the CLI boundary for state-changing verbs.
-    The source-HLD phrase "should become mandatory later" is now superseded for the
-    CLI by specs/017-cli-contract/contracts/session-enforcement.md."""
+    and mandatory named sessions at the CLI boundary for state-changing verbs."""
     db = str(tmp_path / "flow.db")
     assert flow.main(["--db", db, "add", "task", "--session", "runner"]) == 0
     capsys.readouterr()
