@@ -373,6 +373,14 @@ rides on it.
   quiesce/checkpoint the database and include the `-wal` and `-shm` companions.
 - **Integrity check.** Use `flow check` to run `PRAGMA integrity_check` explicitly before
   larger behavior changes, after backup, or after moving a database.
+- **Restore is manual.** `flow backup <path>` produces a checkpointed, integrity-verified
+  SQLite file suitable for operator-managed recovery, but Baton does not expose a
+  `flow restore` verb. To restore: stop all Baton use, preserve the current `.flow/flow.db`
+  as an operator backup if needed, run `flow check` on the chosen backup, then replace
+  `.flow/flow.db` with that verified backup while the system is quiescent. Do not use a live
+  WAL-mode database as the restore source; use `flow backup` output. A first-class restore
+  command would be destructive recovery tooling requiring a separate HLD decision before any
+  CLI verb is added.
 
 The markdown projection is written *after* the transaction commits; it is a re-derivable
 view, never part of a transaction.
