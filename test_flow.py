@@ -469,14 +469,11 @@ def test_session_falls_back_when_label_dry(conn):  # HLD-010
 
 
 def test_hld010_verify_invariant(conn):
-    """HLD-010 VERIFY: every claim names a session and a missing name is an error (no
-    anonymous path); a session prefers its bound label, binds to the label of the first
+    """HLD-010: a session prefers its bound label, binds to the label of the first
     labeled task it claims, and falls back to any runnable task only when none of its
-    label remain; a session sees none only when no runnable work exists; the declared
-    name is durable — reclaim takes the task, not the identity.
+    label remain; a session sees none only when no runnable work exists.
 
-    Note: anonymous-session enforcement (no anonymous path) is a deferred extension;
-    this test covers the routing behavior that is implemented."""
+    Full VERIFY coverage accounting: test_hld010_anonymous_session_path_deferred."""
     # backward compat: no session → oldest runnable task
     oldest = flow.add(conn, "oldest", label="x")
     flow.add(conn, "newer", label="y")
@@ -496,6 +493,24 @@ def test_hld010_verify_invariant(conn):
     flow.next_task(conn, assignee="drain2")
     nothing = flow.next_task(conn, assignee="drain3")
     assert nothing is None
+
+
+def test_hld010_anonymous_session_path_deferred(conn):
+    """HLD-010 coverage accounting.
+
+    HLD-010 VERIFY: every claim names a session and a missing name is an error (no
+    anonymous path); a session prefers its bound label, binds to the label of the first
+    labeled task it claims, and falls back to any runnable task only when none of its
+    label remain; a session sees none only when no runnable work exists; the declared
+    name is durable — reclaim takes the task, not the identity
+
+    Implemented: label affinity, fallback routing, none-when-empty, durable identity
+    (test_hld010_verify_invariant, test_session_* tests).
+    Deferred: mandatory named session — anonymous claims (assignee=None) still succeed;
+    the no-anonymous-path invariant is not yet enforced."""
+    tid = flow.add(conn, "work")
+    t = flow.next_task(conn)
+    assert t is not None and t["id"] == tid, "anonymous claim should still succeed (gap)"
 
 
 # --- HLD-014 orphaned-work recovery (lease, reclaim, fence) -----------------
@@ -523,15 +538,10 @@ def test_migration_adds_columns_to_old_db(tmp_path):  # HLD-013 / HLD-014
 
 
 def test_orphaned_task_reclaimed(conn):  # HLD-014
-    """HLD-014 VERIFY: a non-responsive session's task is reclaimable two ways — an
-    explicit flow reclaim acts immediately on an observed non-response, and a lazy
-    lease-TTL backstop reclaims silent tasks automatically; reclaim returns the task to
-    pending (in_progress only, never blocked), clears assignee, records the reason, and
-    saturates reclaim_count at RECLAIM_MAX as a permanent flaky-mark — at or past the
-    ceiling every further orphaning escalates immediately; ownership-implying transitions
-    by a session that is not the current owner are rejected, while an unowned task stays
-    operable by any named session; note/decide stay multi-writer and feedback (like add)
-    is an unfenced creation verb; reclaim runs under the claim's BEGIN IMMEDIATE"""
+    """HLD-014: lazy lease-TTL backstop reclaims a silent task to pending, clears
+    assignee, records the reason, and increments reclaim_count.
+
+    Full VERIFY coverage accounting: test_hld014_explicit_reclaim_deferred."""
     tid = flow.add(conn, "work")
     flow.next_task(conn, assignee="alice")        # alice claims
     _age(conn, tid, flow.LEASE_TTL + 10)          # alice goes silent
@@ -639,6 +649,27 @@ def test_cli_done_accepts_assignee_form(tmp_path):  # HLD-014
     assert flow.main(["--db", db, "add", "ship"]) == 0
     assert flow.main(["--db", db, "next", "--assignee", "me"]) == 0
     assert flow.main(["--db", db, "done", "1", "shipped", "--assignee", "me"]) == 0
+
+
+def test_hld014_explicit_reclaim_deferred(conn):
+    """HLD-014 coverage accounting.
+
+    HLD-014 VERIFY: a non-responsive session's task is reclaimable two ways — an
+    explicit flow reclaim acts immediately on an observed non-response, and a lazy
+    lease-TTL backstop reclaims silent tasks automatically; reclaim returns the task to
+    pending (in_progress only, never blocked), clears assignee, records the reason, and
+    saturates reclaim_count at RECLAIM_MAX as a permanent flaky-mark — at or past the
+    ceiling every further orphaning escalates immediately; ownership-implying transitions
+    by a session that is not the current owner are rejected, while an unowned task stays
+    operable by any named session; note/decide stay multi-writer and feedback (like add)
+    is an unfenced creation verb; reclaim runs under the claim's BEGIN IMMEDIATE
+
+    Implemented: lazy lease-TTL reclaim, fence, flaky-mark, escalation ceiling,
+    blackboard multi-writer (test_orphaned_task_reclaimed and sibling HLD-014 tests).
+    Deferred: explicit flow reclaim verb — not yet in the public API; feedback verb —
+    not yet implemented (add is the only unfenced creation verb today)."""
+    assert not hasattr(flow, "reclaim"), "reclaim() appeared — promote this to a real test"
+    assert not hasattr(flow, "feedback"), "feedback() appeared — promote this to a real test"
 
 
 # --- HLD-009 CLI contract characterization (spec 017-cli-contract) ---------
@@ -889,15 +920,10 @@ def test_hld008_verify_invariant(conn, tmp_path):
 
 
 def test_hld009_verify_invariant():
-    """HLD-009 VERIFY: every CLI call carries a recognized session, enforced at the CLI
-    entry — a missing session is an error, there is no anonymous path, reads included;
-    runners use only the listed verbs with no direct database access; answer, reopen,
-    list, and reclaim are human/ops-facing; feedback steers and add/feedback create work.
+    """HLD-009: runners use only the listed verbs with no direct database access;
+    human/ops verbs (reply, reopen, list) are absent from the runner loop.
 
-    This test characterizes that core.md — the runner loop definition — structurally
-    satisfies the HLD-009 VERIFY invariant (session enforcement and report verb surface
-    are deferred extensions tested separately).
-    """
+    Full VERIFY coverage accounting: test_hld009_session_enforcement_deferred."""
     core = (Path(flow.__file__).parent / "core.md").read_text()
 
     # no direct database access — core.md must not reference sqlite3 or .db paths
@@ -917,6 +943,25 @@ def test_hld009_verify_invariant():
     assert runner_verbs <= flow_verbs_in_core, (
         f"runner verbs missing from core.md: {runner_verbs - flow_verbs_in_core}"
     )
+
+
+def test_hld009_session_enforcement_deferred(tmp_path):
+    """HLD-009 coverage accounting.
+
+    HLD-009 VERIFY: every CLI call carries a recognized session, enforced at the CLI
+    entry — a missing session is an error, there is no anonymous path, reads included;
+    runners use only the listed verbs with no direct database access; answer, reopen,
+    list, and reclaim are human/ops-facing; feedback steers and add/feedback create work
+
+    Implemented: runner verb contract, no direct DB access, human/ops verb separation
+    (test_hld009_verify_invariant).
+    Deferred: mandatory session at CLI entry — anonymous path still accepted; reclaim
+    verb not yet implemented (HLD-014); feedback verb not yet implemented; answer verb
+    is named reply in code (naming alignment deferred)."""
+    db = str(tmp_path / "flow.db")
+    assert flow.main(["--db", db, "add", "task"]) == 0
+    rc = flow.main(["--db", db, "next"])
+    assert rc == 0, "anonymous next should still succeed (gap: no session enforcement)"
 
 
 def test_hld002_vocabulary_in_core_md():
