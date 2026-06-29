@@ -136,6 +136,7 @@ class FlowError(Exception):
 def _task(conn, task_id):
     row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
     if row is None:
+        # INVARIANT: existence
         raise FlowError(f"task {task_id} not found")
     return row
 
@@ -219,6 +220,7 @@ def _require_owner(conn, task_id, session):
         return
     owner = _task(conn, task_id)["assignee"]
     if owner is not None and owner != session:
+        # INVARIANT: ownership
         raise FlowError(f"you no longer hold task {task_id} (held by {owner})")
 
 
@@ -323,12 +325,14 @@ def escalate(conn, task_id, question, session=None):
         _require_owner(conn, task_id, session)
         t = _task(conn, task_id)
         if t["state"] == "done":
+            # INVARIANT: lifecycle
             raise FlowError(f"task {task_id} is done; reopen it before escalating")
         open_esc = conn.execute(
             "SELECT 1 FROM escalations WHERE task_id=? AND answer IS NULL LIMIT 1",
             (task_id,),
         ).fetchone()
         if open_esc:
+            # INVARIANT: lifecycle
             raise FlowError(f"task {task_id} already has an open escalation")
         conn.execute(
             "INSERT INTO escalations (task_id, question, created_at) VALUES (?,?,?)",
@@ -342,12 +346,14 @@ def escalate(conn, task_id, question, session=None):
 
 def split(conn, task_id, child_texts, session=None):
     if not child_texts:
+        # INVARIANT: dependency
         raise FlowError("split requires at least one child task")
     child_ids = []
     with _tx(conn):
         _require_owner(conn, task_id, session)
         parent = _task(conn, task_id)
         if parent["state"] == "done":
+            # INVARIANT: lifecycle
             raise FlowError(f"task {task_id} is done; reopen it before splitting")
         for text in child_texts:
             cid = conn.execute(
@@ -372,6 +378,7 @@ def done(conn, task_id, outcome, session=None):
         _require_owner(conn, task_id, session)
         _task(conn, task_id)
         if _is_blocked(conn, task_id):
+            # INVARIANT: dependency
             raise FlowError(
                 f"task {task_id} cannot be done: it still has unmet dependencies "
                 "(open escalation or unfinished children)"
@@ -423,6 +430,7 @@ def reopen(conn, task_id):
     with _tx(conn):
         t = _task(conn, task_id)
         if t["state"] != "done":
+            # INVARIANT: lifecycle
             raise FlowError(f"task {task_id} is not done (state={t['state']})")
         _set_state(conn, task_id, "pending")
         _append(conn, task_id, "system", "reopened")
