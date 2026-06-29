@@ -52,7 +52,7 @@ def test_claim_recorded_on_baton(conn):
 
 
 def test_anonymous_claim_recorded_on_baton(conn):
-    """HLD-013: anonymous claims still leave durable evidence."""
+    """HLD-013: internal anonymous claims still leave durable evidence."""
     flow.add(conn, "task")
     flow.next_task(conn)
     _, entries = flow.context(conn, 1)
@@ -283,12 +283,126 @@ def test_split_keeps_parent_label(conn):
 
 def test_cli_roundtrip(tmp_path, capsys):
     db = str(tmp_path / "flow.db")
-    assert flow.main(["--db", db, "add", "cli task"]) == 0
+    assert flow.main(["--db", db, "add", "cli task", "--session", "me"]) == 0
     tid = capsys.readouterr().out.strip()
     assert flow.main(["--db", db, "next", "--assignee", "me"]) == 0
     out = capsys.readouterr().out
     assert f"#{tid}" in out and "[in_progress]" in out
-    assert flow.main(["--db", db, "done", tid, "finished"]) == 0
+    assert flow.main(["--db", db, "done", tid, "finished", "--session", "me"]) == 0
+
+
+@pytest.mark.parametrize(
+    ("verb_args", "setup_args"),
+    [
+        (["add", "task"], []),
+        (["next"], [["add", "task", "--session", "setup"]]),
+        (["note", "1", "progress"], [["add", "task", "--session", "setup"]]),
+        (
+            ["done", "1", "finished"],
+            [["add", "task", "--session", "setup"], ["next", "--session", "runner"]],
+        ),
+        (["escalate", "1", "blocked"], [["add", "task", "--session", "setup"]]),
+        (["split", "1", "child"], [["add", "task", "--session", "setup"]]),
+        (["decide", "1", "choice"], [["add", "task", "--session", "setup"]]),
+        (
+            ["reply", "1", "answer"],
+            [["add", "task", "--session", "setup"], ["escalate", "1", "question", "--session", "setup"]],
+        ),
+        (
+            ["reopen", "1"],
+            [["add", "task", "--session", "setup"], ["done", "1", "done", "--session", "setup"]],
+        ),
+    ],
+)
+def test_cli_state_changing_verbs_require_session(tmp_path, capsys, verb_args, setup_args):
+    db = str(tmp_path / "flow.db")
+    for args in setup_args:
+        assert flow.main(["--db", db, *args]) == 0
+        capsys.readouterr()
+
+    rc = flow.main(["--db", db, *verb_args])
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert "--session" in captured.err
+
+
+def test_cli_anonymous_next_rejected_without_claiming_work(tmp_path, capsys):
+    db = str(tmp_path / "flow.db")
+    assert flow.main(["--db", db, "add", "task", "--session", "setup"]) == 0
+    capsys.readouterr()
+
+    assert flow.main(["--db", db, "next"]) == 1
+    captured = capsys.readouterr()
+    assert "--session" in captured.err
+
+    assert flow.main(["--db", db, "next", "--session", "runner"]) == 0
+    out = capsys.readouterr().out
+    assert "#1 [in_progress]" in out
+
+
+def test_cli_read_only_and_maintenance_verbs_allow_no_session(tmp_path, capsys):
+    db = str(tmp_path / "flow.db")
+    backup = tmp_path / "backup.db"
+    assert flow.main(["--db", db, "add", "task", "--session", "setup"]) == 0
+    capsys.readouterr()
+
+    assert flow.main(["--db", db, "context", "1"]) == 0
+    assert flow.main(["--db", db, "list"]) == 0
+    assert flow.main(["--db", db, "backup", str(backup)]) == 0
+    assert flow.main(["--db", str(backup), "check"]) == 0
+
+
+@pytest.mark.parametrize(
+    ("verb_args", "setup_args"),
+    [
+        (["add", "task"], []),
+        (["next"], [["add", "task", "--session", "runner"]]),
+        (["note", "1", "progress"], [["add", "task", "--session", "runner"]]),
+        (
+            ["done", "1", "finished"],
+            [["add", "task", "--session", "runner"], ["next", "--session", "runner"]],
+        ),
+        (["escalate", "1", "blocked"], [["add", "task", "--session", "runner"]]),
+        (["split", "1", "child"], [["add", "task", "--session", "runner"]]),
+        (["decide", "1", "choice"], [["add", "task", "--session", "runner"]]),
+        (
+            ["reply", "1", "answer"],
+            [["add", "task", "--session", "runner"], ["escalate", "1", "question", "--session", "runner"]],
+        ),
+        (
+            ["reopen", "1"],
+            [["add", "task", "--session", "runner"], ["done", "1", "done", "--session", "runner"]],
+        ),
+    ],
+)
+def test_cli_session_flag_is_accepted_on_state_changing_verbs(
+    tmp_path, capsys, verb_args, setup_args
+):
+    db = str(tmp_path / "flow.db")
+    for args in setup_args:
+        assert flow.main(["--db", db, *args]) == 0
+        capsys.readouterr()
+
+    assert flow.main(["--db", db, *verb_args, "--session", "runner"]) == 0
+
+
+def test_cli_assignee_alias_still_accepted(tmp_path, capsys):
+    db = str(tmp_path / "flow.db")
+    assert flow.main(["--db", db, "add", "task", "--assignee", "runner"]) == 0
+    capsys.readouterr()
+    assert flow.main(["--db", db, "next", "--assignee", "runner"]) == 0
+    assert flow.main(["--db", db, "done", "1", "finished", "--assignee", "runner"]) == 0
+
+
+def test_cli_conflicting_session_and_assignee_rejected(tmp_path, capsys):
+    db = str(tmp_path / "flow.db")
+    rc = flow.main(
+        ["--db", db, "add", "task", "--session", "alice", "--assignee", "bob"]
+    )
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "conflicting --session and --assignee" in captured.err
 
 
 # --- contract / structural invariants --------------------------------------
@@ -461,7 +575,7 @@ def test_backup_cleans_up_temp_file_after_success(tmp_path):
 def test_cli_backup_and_check_commands(tmp_path, capsys):
     db = tmp_path / "flow.db"
     backup = tmp_path / "snapshot.db"
-    assert flow.main(["--db", str(db), "add", "cli preserved"]) == 0
+    assert flow.main(["--db", str(db), "add", "cli preserved", "--session", "setup"]) == 0
 
     assert flow.main(["--db", str(db), "backup", str(backup)]) == 0
     out = capsys.readouterr().out
@@ -666,6 +780,10 @@ def test_done_wakes_parent_atomically(conn):  # HLD-013
 
 
 def test_next_without_session_unchanged(conn):  # HLD-010
+    """Python API compatibility: no-session next_task remains an internal path.
+
+    Mandatory session enforcement is a CLI boundary; direct library calls are not
+    runner command authorization."""
     a = flow.add(conn, "first", label="x")
     flow.add(conn, "second")
     t = flow.next_task(conn)  # no session: oldest pending regardless of label
@@ -694,8 +812,8 @@ def test_hld010_routing_affinity_subset(conn):
     labeled task it claims, and falls back to any runnable task only when none of its
     label remain; a session sees none only when no runnable work exists.
 
-    Full VERIFY coverage accounting, including deferred no-anonymous-path behavior:
-    test_hld010_anonymous_session_path_deferred."""
+    Full VERIFY coverage accounting, including internal Python compatibility for
+    no-session next_task: test_hld010_internal_api_anonymous_session_path."""
     # backward compat: no session → oldest runnable task
     oldest = flow.add(conn, "oldest", label="x")
     flow.add(conn, "newer", label="y")
@@ -717,7 +835,7 @@ def test_hld010_routing_affinity_subset(conn):
     assert nothing is None
 
 
-def test_hld010_anonymous_session_path_deferred(conn):
+def test_hld010_internal_api_anonymous_session_path(conn):
     """HLD-010 coverage accounting.
 
     HLD-010 VERIFY: named claims are preferred and missing-session claims remain a
@@ -728,8 +846,8 @@ def test_hld010_anonymous_session_path_deferred(conn):
 
     Implemented: label affinity, fallback routing, none-when-empty, durable identity
     (test_hld010_routing_affinity_subset, test_session_* tests).
-    Transition policy C: named sessions are preferred now and should become mandatory
-    later; anonymous claims (assignee=None) still succeed temporarily."""
+    Mandatory session enforcement is implemented at the CLI boundary. The direct
+    Python API keeps the legacy no-session path for compatibility and unit coverage."""
     tid = flow.add(conn, "work")
     t = flow.next_task(conn)
     assert t is not None and t["id"] == tid, "anonymous claim should still succeed (gap)"
@@ -827,6 +945,9 @@ def test_blackboard_not_fenced(conn):  # HLD-014
 
 
 def test_no_session_task_unfenced(conn):  # HLD-014
+    """Python API compatibility: direct no-session tasks remain unfenced.
+
+    CLI state-changing verbs now require --session/--assignee before dispatch."""
     tid = flow.add(conn, "work")
     flow.next_task(conn)                          # claimed with NO session (legacy)
     flow.done(conn, tid, "done via legacy path")  # no --session -> unfenced
@@ -868,7 +989,7 @@ def test_cli_done_accepts_assignee_form(tmp_path):  # HLD-014
     # core.md prescribes `--assignee <me>` on done/escalate/split; the CLI must accept it
     # (the fence verbs are the point of HLD-014 — they must not error for a compliant runner).
     db = str(tmp_path / "flow.db")
-    assert flow.main(["--db", db, "add", "ship"]) == 0
+    assert flow.main(["--db", db, "add", "ship", "--session", "me"]) == 0
     assert flow.main(["--db", db, "next", "--assignee", "me"]) == 0
     assert flow.main(["--db", db, "done", "1", "shipped", "--assignee", "me"]) == 0
 
@@ -887,8 +1008,9 @@ def test_hld014_explicit_reclaim_deferred(conn):
 
     Implemented: lazy lease-TTL reclaim, fence, flaky-mark, escalation ceiling,
     blackboard multi-writer (test_orphaned_task_reclaimed and sibling HLD-014 tests).
-    Transition policy C: explicit flow reclaim and feedback stay deferred; anonymous and
-    unowned cleanup paths remain temporary compatibility gaps."""
+    Transition policy C: explicit flow reclaim and feedback stay deferred; CLI
+    state-changing verbs now require named sessions, while internal Python compatibility
+    paths remain outside the CLI authorization boundary."""
     assert not hasattr(flow, "reclaim"), "reclaim() appeared — promote this to a real test"
     assert not hasattr(flow, "feedback"), "feedback() appeared — promote this to a real test"
 
@@ -898,7 +1020,7 @@ def test_hld014_explicit_reclaim_deferred(conn):
 
 def test_runner_verb_contracts(conn):
     # SC-001: each runner verb exercises its behavior in isolation. This is not
-    # mandatory-session enforcement; HLD-009's no-anonymous-path clause is deferred.
+    # mandatory-session enforcement; CLI-boundary session enforcement has separate tests.
     # add: creates a pending task
     tid = flow.add(conn, "work item")
     assert state(conn, tid) == "pending"
@@ -1145,8 +1267,8 @@ def test_hld009_runner_contract_subset():
     """HLD-009: runners use only the listed verbs with no direct database access;
     human/ops verbs (reply, reopen, list) are absent from the runner loop.
 
-    Full VERIFY coverage accounting, including deferred mandatory-session behavior:
-    test_hld009_session_enforcement_deferred."""
+    Full VERIFY coverage accounting, including active mandatory-session behavior:
+    test_hld009_session_enforcement_active."""
     core = (Path(flow.__file__).parent / "core.md").read_text()
 
     # no direct database access — core.md must not reference sqlite3 or .db paths
@@ -1168,23 +1290,27 @@ def test_hld009_runner_contract_subset():
     )
 
 
-def test_hld009_session_enforcement_deferred(tmp_path):
+def test_hld009_session_enforcement_active(tmp_path, capsys):
     """HLD-009 coverage accounting.
 
+    Raw source-HLD VERIFY text retained for the meta-test:
     HLD-009 VERIFY: named sessions are preferred and should become mandatory later, but
     the legacy anonymous path remains temporarily allowed; runners use only the listed
     implemented verbs with no direct database access; reply is the current human answer
     verb; feedback, answer naming, and explicit reclaim remain tracked alignment gaps;
     lazy lease-TTL reclaim is the implemented reclaim path
 
-    Implemented: runner verb contract, no direct DB access, human/ops verb separation
-    (test_hld009_runner_contract_subset).
-    Transition policy C: mandatory sessions, explicit reclaim, answer naming, and
-    feedback are tracked future alignment work, not completed behavior."""
+    Implemented: runner verb contract, no direct DB access, human/ops verb separation,
+    and mandatory named sessions at the CLI boundary for state-changing verbs.
+    The source-HLD phrase "should become mandatory later" is now superseded for the
+    CLI by specs/017-cli-contract/contracts/session-enforcement.md."""
     db = str(tmp_path / "flow.db")
-    assert flow.main(["--db", db, "add", "task"]) == 0
+    assert flow.main(["--db", db, "add", "task", "--session", "runner"]) == 0
+    capsys.readouterr()
     rc = flow.main(["--db", db, "next"])
-    assert rc == 0, "anonymous next should still succeed (gap: no session enforcement)"
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "--session" in captured.err
 
 
 def test_hld002_vocabulary_in_core_md():
