@@ -165,31 +165,36 @@ runner must escalate when:
 
 Any trigger → `flow escalate`, task → `blocked`, runner moves on.
 
-## HLD-007 - Human-in-the-loop: answer and feedback
+## HLD-007 - Human-in-the-loop: answer / reply / feedback transition
 
 HLD-ID: HLD-007
-HLD-DESC: HLD-007 is in-scope processing at medium risk, touching processing; "human-in-the-loop: answer resolves an open escalation, feedback steers".
+HLD-DESC: HLD-007 is in-scope processing at medium risk, touching processing; "human-in-the-loop: reply currently resolves an open escalation; answer/feedback naming is a tracked alignment gap".
 HLD-ROLE: processing
 HLD-STATUS: active
 HLD-RISK: MEDIUM
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,core.md
-HLD-VERIFY: answer resolves a task's open escalation — appended to the task's baton, resolves the one open escalation, and wakes the task; answer is rejected when there is no open escalation; feedback steers — on a report it drives an agent-judged update (in-place, section, supersede, or sweep), and as new scope it creates a referenced task; feedback never forces a state change a guard would forbid; an answer is always about the task it wakes
-HLD-RATIONALE: the v1 reply verb was overloaded across six states and carried a runner-side "is this new scope?" branch; the discriminator "was the task waiting for this?" splits it — yes is an answer (a fork-join join, in-band, always about this task), no is feedback (steering output or injecting scope). The human picks the channel, so answer never guesses; the magnitude of a feedback response is the agent's judgment (HLD-015), not hardcoded into a verb
+HLD-VERIFY: reply currently resolves a task's open escalation — appended to the task's baton, resolves the one open escalation, and wakes the task; answer and feedback are target contract names, not fully implemented CLI verbs yet; feedback remains a deferred steering/new-scope verb; naming alignment is tracked explicitly rather than silently fixed
+HLD-RATIONALE: the target contract separates a waiting-task response from steering/new-scope feedback. The current implementation still exposes `reply` for the waiting-task response and has not yet exposed first-class `answer` or `feedback` verbs. That is a tracked transition gap, not a reason to pretend the target names are implemented.
 
-The rule that separates the two:
+The target rule that separates the two:
 
 > **`answer`** responds to a question the task is waiting on. **`feedback`** steers — it
 > comments on output or injects scope a task wasn't waiting on.
 
-**`answer <id> <text>`** — valid only when the task is blocked on an open escalation.
+**Target `answer <id> <text>`; current `reply <id> <text>`.** The implemented verb is
+`reply`; `answer` is the target name for the same waiting-task response. It is valid only
+when the task is blocked on an open escalation.
 Appends to the task's baton, resolves that one escalation, wakes the task. An answer is, by
 construction, **about this task** (no "is this new scope?" branch). If
 an answer happens to *reveal* new scope, the runner spins it off by its own judgment
 (HLD-015), never silently merging it. `answer` with no open escalation → rejected:
 *"nothing to answer; use feedback."*
+Current `reply` is broader than the target `answer`: it also reopens a done task as a late
+reply signal, and that compatibility behavior remains implemented until the naming/verb
+split is deliberately completed.
 
-**`feedback <id> <text>`** — steers. On a **report**, it drives an agent-judged update
+**Deferred `feedback <id> <text>`.** Feedback steers. On a **report**, it drives an agent-judged update
 (HLD-016: in-place / section / supersede / sweep) — the human says what's wrong or wanted;
 the agent decides how big the response is. As **new scope**, it creates a referenced task
 (sugar over `add` + a reference): the new task is a regular pending task linked to the
@@ -218,22 +223,22 @@ The baton is *how a task went*; the report is *what was produced*.
 - A runner MUST read a task's baton (`flow context <id>`) before working it and append
   progress as it goes (`flow note`). Batons are read from the database via the CLI.
 
-## HLD-009 - The CLI contract
+## HLD-009 - The CLI contract during session/reclaim transition
 
 HLD-ID: HLD-009
-HLD-DESC: HLD-009 is in-scope api at high risk, touching cli; "the flow CLI verbs are the runner contract; every call is a named session".
+HLD-DESC: HLD-009 is in-scope api at high risk, touching cli; "the flow CLI verbs are the runner contract; named sessions are preferred while the legacy anonymous path remains temporarily allowed".
 HLD-ROLE: api
 HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,flow,core.md
-HLD-VERIFY: every CLI call carries a recognized session, enforced at the CLI entry — a missing session is an error, there is no anonymous path, reads included; runners use only the listed verbs with no direct database access; answer, reopen, list, and reclaim are human/ops-facing; feedback steers and add/feedback create work
-HLD-RATIONALE: the name a session declares is its bracelet (HLD-010) — accountability, not security; enforcing it once at the CLI entry (not per-verb) makes "no anonymous path" true for every command including reads, because a task and a report must always have a trackable actor behind every touch
+HLD-VERIFY: named sessions are preferred and should become mandatory later, but the legacy anonymous path remains temporarily allowed; runners use only the listed implemented verbs with no direct database access; reply is the current human answer verb; feedback, answer naming, and explicit reclaim remain tracked alignment gaps; lazy lease-TTL reclaim is the implemented reclaim path
+HLD-RATIONALE: the name a session declares is its bracelet (HLD-010) — accountability, not security. The target state is CLI-entry enforcement for every call, reads included. Transition policy C keeps the legacy anonymous path temporarily allowed so current behavior stays honest while named-session enforcement is implemented deliberately later.
 
-**Every invocation names its session** (`--session <name>`), enforced **at the CLI entry** —
-a call with no recognized session is an error, reads included. The CLI is for named
-sessions and nobody else. The tables below omit `--session` per row for brevity; it is
-required on **all** of them.
+**Named sessions are preferred now and mandatory later.** A compliant invocation names its
+session (`--session <name>` or the current `--assignee <name>` compatibility spelling).
+The legacy no-session path still exists temporarily and is a known gap, not a completed
+contract. The tables below omit session flags per row for brevity.
 
 Runner-facing (the loop):
 
@@ -247,22 +252,22 @@ Runner-facing (the loop):
 | `flow done <id> <outcome>` | Complete with a **mandatory** outcome (the task's account; a long one renders as separate markdown but is still an outcome, not a report — HLD-016). |
 | `flow escalate <id> <question>` | Park the task on a human (one open escalation at a time). |
 | `flow split <id> "child A" "child B" …` | Spawn children; park the parent. |
-| `flow feedback <id> <text>` | Steer (HLD-007): drive an agent-judged report update, or inject a referenced task. |
+| `flow feedback <id> <text>` | Deferred steering verb (HLD-007): target name for report feedback or referenced-task injection. |
 
-Human/ops-facing (not part of the runner loop, but still carry a recognized session):
+Human/ops-facing (not part of the runner loop):
 
 | Verb | Meaning |
 |---|---|
-| `flow answer <id> <text>` | Answer a task's one open escalation; resolve + wake. Rejected if none open. |
+| `flow reply <id> <text>` | Current implemented answer path: resolve a task's one open escalation and wake it. Target naming alignment to `answer` is tracked, not silently fixed. |
 | `flow reopen <id>` | Resurrect a `done` task to `pending` (rare; the norm is supersede — HLD-004). Runner- or human-**callable**, but not a routine **loop step** (see the permission-vs-loop note below). |
-| `flow reclaim <id>` | Immediately reclaim a non-responsive session's task (HLD-014) — the "act" in see-and-act, no waiting out the lease. |
-| `flow list` | List tasks/sessions with state and liveness. Read-only. |
+| `flow reclaim <id>` | Deferred explicit reclaim verb (HLD-014). Current implementation has lazy lease-TTL reclaim inside `flow next`. |
+| `flow list` | List tasks with state. Session/liveness visibility is not implemented yet. Read-only. |
 
 **Permission vs loop membership.** `core.md` defines the *routine loop* — claim → work →
-hand off → done. A verb being absent from that loop (the "human/ops" set: `answer`,
-`reopen`, `reclaim`, `list`) means it is *not a routine step*, **not** that a runner may not
-call it. A runner may `reopen` or `reclaim` when its judgment calls for it (HLD-015); these
-simply aren't part of the steady-state cycle. (`test_human_ops_verbs_absent_from_runner_loop`
+hand off → done. A verb being absent from that loop (the "human/ops" set: `reply`,
+`reopen`, `list`, plus deferred `answer`/`feedback`/`reclaim`) means it is *not a routine
+step*, **not** that a runner may not eventually call an implemented ops verb when its
+judgment calls for it (HLD-015). (`test_human_ops_verbs_absent_from_runner_loop`
 therefore checks *loop membership* — absence from `core.md` — not callability.)
 
 Runners use **only** these task/steering verbs — no direct database access, ever. The
@@ -270,22 +275,22 @@ Runners use **only** these task/steering verbs — no direct database access, ev
 is *not yet enumerated*; until it is, this set is the task/steering layer and
 `test_cli_exposes_only_contract_verbs` covers exactly that layer.
 
-## HLD-010 - Work routing (mandatory named sessions, soft label affinity)
+## HLD-010 - Work routing (preferred named sessions, soft label affinity)
 
 HLD-ID: HLD-010
-HLD-DESC: HLD-010 is in-scope architecture at high risk, touching processing; "work routing by mandatory named sessions and soft label affinity".
+HLD-DESC: HLD-010 is in-scope architecture at high risk, touching processing; "work routing by preferred named sessions and soft label affinity during the anonymous-path transition".
 HLD-ROLE: architecture
 HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,test_flow.py
-HLD-VERIFY: every claim names a session and a missing name is an error (no anonymous path); a session prefers its bound label, binds to the label of the first labeled task it claims, and falls back to any runnable task only when none of its label remain; a session sees none only when no runnable work exists; the declared name is durable — reclaim takes the task, not the identity
-HLD-RATIONALE: the name is the bracelet — declaring a true name is the whole enrollment, there is no separate registration step; first contact creates the session row implicitly and the system trusts the name on sight (it cannot and need not verify truthfulness); removing the v1 anonymous path closes the unfenced legacy hole at its root
+HLD-VERIFY: named claims are preferred and missing-session claims remain a temporary legacy path, explicitly tracked as a gap; a session prefers its bound label, binds to the label of the first labeled task it claims, and falls back to any runnable task only when none of its label remain; a session sees none only when no runnable work exists; the declared name is durable — lazy reclaim takes the task, not the identity
+HLD-RATIONALE: the name is the bracelet — declaring a true name is the whole enrollment, there is no separate registration step. The target state rejects missing names, but transition policy C keeps the v1 anonymous path temporarily allowed until enforcement is implemented and tested.
 
-A session is **mandatory** and names itself: `flow next --session <name>` means *"I am
-`<name>`; give me my next."* The name **is** the bracelet — declaring it is the enrollment;
-no separate registration verb, first contact creates the session row implicitly, the system
-trusts the name on sight and rejects only its absence.
+A named session says `flow next --session <name>` or current compatibility spelling
+`--assignee <name>`: *"I am `<name>`; give me my next."* Named sessions are the preferred
+path and the future mandatory path. Missing-session claims still work temporarily through
+the legacy anonymous path and must stay visible as a known gap until removed deliberately.
 
 - **Label** — a task's optional subject (component/feature/topic); reuses the existing
   column. Also the natural scope a **report** is about (HLD-016).
@@ -304,7 +309,7 @@ HLD-STATUS: active
 HLD-RISK: LOW
 HLD-SPECS: TBD
 HLD-RESOURCES: TBD
-HLD-DESC: HLD-011 is out-of-scope governance at low risk, touching none; "still stripped: web UI / HTTP API, connection pools, health-monitoring daemons, automatic failover, environment staging, migration tooling — reports and lazy reclaim are back in scope".
+HLD-DESC: HLD-011 is out-of-scope governance at low risk, touching none; "still stripped: web UI / HTTP API, connection pools, health-monitoring daemons, automatic failover, environment staging, migration tooling — reports and lazy reclaim are back in scope; explicit reclaim remains deferred".
 
 The strip's boundary still holds for the operational machinery — **out of scope:** the web
 UI / HTTP API, connection pools, **health-monitoring daemons**, automatic failover,
@@ -313,11 +318,11 @@ environment staging, and migration tooling. Re-introduce only with a documented 
 Two things this revision **moves back in scope**, with the reason stated:
 - **Reports (HLD-016)** — the strip dropped them along with the cruft; they are the system's
   *output* (HLD-001) and return as a primary concept, CLI + markdown only (no web UI).
-- **See-and-act recovery (HLD-014)** — `flow list` liveness + an explicit `flow reclaim`.
-  This is **not** a health-monitoring daemon: there is no background process. Liveness is
-  *observed on demand* (in `list`) and reclaim is *lazy* (inside `flow next`) or *explicit*
-  (the verb). The stripped "daemon" was a continuous monitor; this is on-demand, so the
-  boundary is intact.
+- **Lazy recovery (HLD-014)** — `flow next` performs lease-TTL reclaim as an automatic
+  floor. Explicit `flow reclaim` remains deferred. This is **not** a health-monitoring
+  daemon: there is no background process. Liveness is observed on demand and reclaim is
+  lazy inside `flow next`; the stripped "daemon" was a continuous monitor, so the boundary
+  is intact.
 
 ## HLD-012 - Technology
 
@@ -362,26 +367,25 @@ rides on it.
 The markdown projection is written *after* the transaction commits; it is a re-derivable
 view, never part of a transaction.
 
-## HLD-014 - Recovery: lease, see-and-act reclaim, fence, flaky-mark
+## HLD-014 - Recovery: lease, lazy reclaim, fence, flaky-mark
 
 HLD-ID: HLD-014
-HLD-DESC: HLD-014 is in-scope architecture at high risk, touching concurrency, data and processing; "recovery: lease, see-and-act reclaim, ownership fence, permanent flaky-mark".
+HLD-DESC: HLD-014 is in-scope architecture at high risk, touching concurrency, data and processing; "recovery: lease, lazy reclaim, ownership fence, permanent flaky-mark; explicit reclaim deferred".
 HLD-ROLE: architecture
 HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,test_flow.py
-HLD-VERIFY: a non-responsive session's task is reclaimable two ways — an explicit flow reclaim acts immediately on an observed non-response, and a lazy lease-TTL backstop reclaims silent tasks automatically; reclaim returns the task to pending (in_progress only, never blocked), clears assignee, records the reason, and saturates reclaim_count at RECLAIM_MAX as a permanent flaky-mark — at or past the ceiling every further orphaning escalates immediately; ownership-implying transitions by a session that is not the current owner are rejected, while an unowned task stays operable by any named session; note/decide stay multi-writer and feedback (like add) is an unfenced creation verb; reclaim runs under the claim's BEGIN IMMEDIATE
-HLD-RATIONALE: every caller is now a named session (HLD-010), so the fence drops only the v1 caller-anonymous bypass; it still distinguishes a task held by another named session (rejected — no theft) from an unowned task (allowed — cleanup, HLD-015). v1's only fast recovery was the anonymous bypass, removed here — so recovery becomes see-and-act: liveness is visible (flow list shows staleness) and flow reclaim acts at once, with the lease as the automatic floor; permanent flaky-mark because a since-fixed task costs one bounded human glance while a reset risks repeating wasted silent-reclaim cycles — a clean slate is a fresh task
+HLD-VERIFY: lazy lease-TTL reclaim is implemented inside flow next and explicit flow reclaim is deferred; lazy reclaim returns a silent in_progress task to pending, clears assignee, records the reason, and saturates reclaim_count at RECLAIM_MAX as a permanent flaky-mark — at or past the ceiling every further orphaning escalates immediately; ownership-implying transitions by a named session that is not the current owner are rejected, while legacy anonymous/unowned paths remain temporarily operable; note/decide stay multi-writer; feedback as a creation/steering verb is deferred; lazy reclaim runs under the claim's BEGIN IMMEDIATE
+HLD-RATIONALE: named-session fencing is the target state, but transition policy C keeps the legacy anonymous path temporarily allowed (HLD-009/HLD-010). Current recovery has the lazy lease-TTL backstop inside `flow next`; explicit `flow reclaim` remains deferred so operators do not infer a see-and-act verb that the implementation does not expose yet.
 
 A session can claim a task and go non-responsive — hung, or vanished. Recovery is a
-**liveness** concern, separate from the correctness HLD-013 guarantees. **See and act:**
-don't wait blindly.
+**liveness** concern, separate from the correctness HLD-013 guarantees.
 
-- **See.** `flow list` surfaces each session's staleness (last-seen, current task), so a
-  non-responsive session is *visible*.
-- **Act now.** `flow reclaim <id>` immediately returns an observed-non-responsive session's
-  task — no waiting out the lease.
+- **See, deferred.** Target session/liveness visibility would surface each session's
+  staleness (last-seen, current task). Current `flow list` is task-only.
+- **Act now, deferred.** Target `flow reclaim <id>` would immediately return an
+  observed-non-responsive session's task. It is not implemented in this transition slice.
 - **Automatic floor.** A task `in_progress` past `LEASE_TTL` (default 1 hour) is reclaimed
   lazily inside `flow next` — the backstop for a session nobody noticed. `note`/`decide`
   refresh the lease stamp; silence alone defines a silent task.
@@ -390,14 +394,14 @@ don't wait blindly.
   `blocked` is parked by design. Runs under the claim's `BEGIN IMMEDIATE`.
 - **Permanent flaky-mark.** `reclaim_count` saturates at `RECLAIM_MAX` (default 3); at/past
   the ceiling, any further orphaning **escalates immediately** instead of requeuing. The
-  mark never resets — an `answer` resolves each escalation but a fresh start is a **new task**
-  (count 0), not a reset.
+  mark never resets — a current `reply` / target `answer` resolves each escalation but a
+  fresh start is a **new task** (count 0), not a reset.
 - **Fence.** `done`/`escalate`/`split` are rejected when the task is held by a *different*
-  named session. An unowned task stays operable by any named session (the cleanup pattern,
-  HLD-015). There is no anonymous caller anymore.
+  named session. Unowned and legacy anonymous paths remain temporarily operable; this is a
+  known transition gap, not the final named-session contract.
 - **Blackboard multi-writer.** `note`/`decide` are never fenced (attributed, per HLD-008).
-  `feedback` is a creation/steering verb (like `add`) — identity-gated, not an ownership
-  transition — so it too is unfenced.
+  Target `feedback` is a deferred creation/steering verb (like `add`) — identity-gated,
+  not an ownership transition — so it remains a future unfenced verb.
 
 ## HLD-015 - The autonomy contract: enforce invariants, delegate judgment
 
@@ -408,19 +412,21 @@ HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,core.md,test_flow.py
-HLD-VERIFY: every raise FlowError in flow.py is tagged with the one invariant it protects, drawn from the closed set dependency, identity, ownership, lifecycle, existence; a raise that cannot be honestly tagged from that set is flagged for review as candidate overreach; the agent-discretion behaviors (done/escalate/split from any non-blocked state, answer-then-runner-decides, feedback-magnitude-is-judged, waking-as-a-decision) are intentional, not defects
+HLD-VERIFY: every raise FlowError in flow.py is tagged with the one invariant it protects, drawn from the closed set dependency, identity, ownership, lifecycle, existence; a raise that cannot be honestly tagged from that set is flagged for review as candidate overreach; the target agent-discretion behaviors (done/escalate/split from any non-blocked state, answer-then-runner-decides, feedback-magnitude-is-judged, waking-as-a-decision) are intentional, not defects, while answer/feedback naming remains a tracked transition gap
 HLD-RATIONALE: an unwritten principle the whole system leans on is itself a stated-not-enforced gap; the tagging guard makes the enforcement boundary auditable without overclaiming — it is a review-forcing tripwire (it surfaces guards that protect no invariant), not a mechanical proof that no overreach exists
 
 The engine constrains only what **must** be true — the closed invariant set:
 
 - **dependency** — a task can't be `done` with unmet dependencies (open escalation or unfinished children); a split must have ≥1 child (no stranded parent).
-- **identity** — every action is taken by a named session; "no one" can't hold or move work (HLD-009/010).
+- **identity** — named sessions are the preferred and future mandatory path; the current
+  anonymous compatibility path is a tracked gap rather than the final contract
+  (HLD-009/010).
 - **ownership** — a task held by a named session can't be transitioned by another (HLD-014).
 - **lifecycle** — the state machine is well-formed: four task states, legal transitions only (`done` can't be escalated/split; `reopen` only from `done`), one open escalation at a time, and **a `deprecated`/`obsolete` report is immutable** (HLD-016).
 - **existence** — operations target a real task/report.
 
 **Everything above that floor is the agent's call:** when to label, how big a response a
-piece of feedback deserves (update / section / supersede / sweep — HLD-016), whether a
+target piece of feedback deserves (update / section / supersede / sweep — HLD-016), whether a
 woken task is still worth doing, when to split, whether to mark stale work done. The
 mechanism never pre-decides a judgment the runner should make.
 
@@ -487,7 +493,8 @@ Reports are DB-owned and markdown-projected, exactly like the baton (HLD-003) �
 is truth in SQLite, readable as a one-way markdown view.
 
 *(The concrete report verb surface — create/update/section/supersede/abandon — and ref
-storage are **a deferred, separate extension to HLD-009's verb contract**, pinned separately. Until then HLD-009 enumerates the task/steering layer only; reports are created via a
-long `done` outcome and steered via `feedback`, and the remaining ops are named here but not
-yet given CLI verbs. The operations and invariants above are the contract; the surface is
-not.)*
+storage are **a deferred, separate extension to HLD-009's verb contract**, pinned separately.
+Until then HLD-009 enumerates the task/steering layer only; reports are represented through
+long `done` outcomes, while feedback-driven report steering remains deferred with the rest
+of the report verb surface. The operations and invariants above are the contract; the
+surface is not.)*
