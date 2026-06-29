@@ -219,15 +219,6 @@ def test_double_escalation_rejected(conn):
         flow.escalate(conn, tid, "second question")
 
 
-def test_escalate_keeps_assignee_characterization(conn):
-    # Documents current (divergent) behavior: assignee stays after escalate.
-    tid = flow.add(conn, "task")
-    flow.next_task(conn, assignee="alice")
-    assert flow._task(conn, tid)["assignee"] == "alice"
-    flow.escalate(conn, tid, "blocked on review")
-    assert flow._task(conn, tid)["assignee"] == "alice"
-
-
 def test_escalate_clears_assignee(conn):
     # HLD-004/005: a task parked as blocked is unassigned.
     tid = flow.add(conn, "task")
@@ -242,15 +233,6 @@ def test_escalate_keeps_label(conn):
     flow.next_task(conn, assignee="alice")
     flow.escalate(conn, tid, "blocked")
     assert flow._task(conn, tid)["label"] == "backend"
-
-
-def test_split_keeps_parent_assignee_characterization(conn):
-    # Documents current (divergent) behavior: parent assignee stays after split.
-    tid = flow.add(conn, "task")
-    flow.next_task(conn, assignee="alice")
-    assert flow._task(conn, tid)["assignee"] == "alice"
-    flow.split(conn, tid, ["sub a", "sub b"])
-    assert flow._task(conn, tid)["assignee"] == "alice"
 
 
 def test_split_clears_parent_assignee(conn):

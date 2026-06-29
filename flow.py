@@ -335,6 +335,7 @@ def escalate(conn, task_id, question, session=None):
         )
         _append(conn, task_id, "escalation", question)
         _set_state(conn, task_id, "blocked")
+        conn.execute("UPDATE tasks SET assignee=NULL WHERE id=?", (task_id,))
     project(conn, task_id)
 
 
@@ -357,6 +358,7 @@ def split(conn, task_id, child_texts, session=None):
             child_ids.append(cid)
         _append(conn, task_id, "split", f"split into tasks {child_ids}")
         _set_state(conn, task_id, "blocked")
+        conn.execute("UPDATE tasks SET assignee=NULL WHERE id=?", (task_id,))
     project(conn, task_id)
     for cid in child_ids:
         project(conn, cid)
