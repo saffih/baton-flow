@@ -14,8 +14,10 @@ A task is runnable only when it has no unmet dependencies:
 """
 
 import argparse
+import os
 import sqlite3
 import sys
+import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -464,6 +466,18 @@ def integrity_check(conn):
     return [row[0] for row in conn.execute("PRAGMA integrity_check").fetchall()]
 
 
+def _integrity_check_connection(conn):
+    return [row[0] for row in conn.execute("PRAGMA integrity_check").fetchall()]
+
+
+def _delete_sqlite_file_set(db_path):
+    for path in (db_path, Path(f"{db_path}-wal"), Path(f"{db_path}-shm")):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+
 def backup_database(conn, dest_path):
     """Create a SQLite-safe snapshot of the live database.
 
@@ -479,15 +493,37 @@ def backup_database(conn, dest_path):
         # INVARIANT: existence
         raise FlowError(f"backup destination already exists: {dest_path}")
     dest_path.parent.mkdir(parents=True, exist_ok=True)
-    dest = sqlite3.connect(dest_path)
+    tmp = tempfile.NamedTemporaryFile(
+        delete=False,
+        dir=dest_path.parent,
+        prefix=f".{dest_path.name}.",
+        suffix=".tmp",
+    )
+    tmp_path = Path(tmp.name)
+    tmp.close()
+    published = False
     try:
-        conn.backup(dest)
-        result = [row[0] for row in dest.execute("PRAGMA integrity_check").fetchall()]
+        dest = sqlite3.connect(tmp_path)
+        try:
+            conn.backup(dest)
+            dest.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            dest.execute("PRAGMA journal_mode=DELETE")
+            result = _integrity_check_connection(dest)
+        finally:
+            dest.close()
+        if result != ["ok"]:
+            # INVARIANT: existence
+            raise FlowError(f"backup integrity check failed: {'; '.join(result)}")
+        try:
+            os.link(tmp_path, dest_path)
+        except FileExistsError:
+            # INVARIANT: existence
+            raise FlowError(f"backup destination already exists: {dest_path}")
+        _delete_sqlite_file_set(tmp_path)
+        published = True
     finally:
-        dest.close()
-    if result != ["ok"]:
-        # INVARIANT: existence
-        raise FlowError(f"backup integrity check failed: {'; '.join(result)}")
+        if not published:
+            _delete_sqlite_file_set(tmp_path)
     return dest_path
 
 

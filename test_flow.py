@@ -424,6 +424,22 @@ def test_backup_database_is_readable_snapshot_while_source_open(tmp_path):
         c.close()
 
 
+def test_backup_cleans_up_temp_file_after_success(tmp_path):
+    db = tmp_path / "flow.db"
+    backup = tmp_path / "snapshot.db"
+    c = flow.connect(db)
+    flow.add(c, "temp cleanup")
+    before = set(tmp_path.iterdir())
+
+    flow.backup_database(c, backup)
+
+    after = set(tmp_path.iterdir())
+    assert backup.exists()
+    assert after - before == {backup}
+    assert not list(tmp_path.glob(f".{backup.name}.*.tmp"))
+    c.close()
+
+
 def test_cli_backup_and_check_commands(tmp_path, capsys):
     db = tmp_path / "flow.db"
     backup = tmp_path / "snapshot.db"
@@ -447,9 +463,64 @@ def test_cli_backup_and_check_commands(tmp_path, capsys):
 def test_backup_refuses_to_overwrite_existing_file(tmp_path):
     c = flow.connect(tmp_path / "flow.db")
     backup = tmp_path / "snapshot.db"
-    backup.write_text("already here")
+    sentinel = b"already here"
+    backup.write_bytes(sentinel)
     with pytest.raises(flow.FlowError):
         flow.backup_database(c, backup)
+    assert backup.read_bytes() == sentinel
+    c.close()
+
+
+def test_backup_integrity_failure_does_not_publish_destination_or_temp(tmp_path, monkeypatch):
+    c = flow.connect(tmp_path / "flow.db")
+    flow.add(c, "bad backup")
+    backup = tmp_path / "snapshot.db"
+
+    monkeypatch.setattr(flow, "_integrity_check_connection", lambda conn: ["not ok"])
+
+    with pytest.raises(flow.FlowError):
+        flow.backup_database(c, backup)
+
+    assert not backup.exists()
+    assert not list(tmp_path.glob(f".{backup.name}.*.tmp"))
+    c.close()
+
+
+def test_backup_publish_failure_does_not_publish_destination_or_temp(tmp_path, monkeypatch):
+    c = flow.connect(tmp_path / "flow.db")
+    flow.add(c, "publish failure")
+    backup = tmp_path / "snapshot.db"
+
+    def fail_link(src, dst):
+        raise OSError("simulated publish failure")
+
+    monkeypatch.setattr(flow.os, "link", fail_link)
+
+    with pytest.raises(OSError):
+        flow.backup_database(c, backup)
+
+    assert not backup.exists()
+    assert not list(tmp_path.glob(f".{backup.name}.*.tmp"))
+    c.close()
+
+
+def test_backup_publish_race_preserves_concurrent_destination(tmp_path, monkeypatch):
+    c = flow.connect(tmp_path / "flow.db")
+    flow.add(c, "publish race")
+    backup = tmp_path / "snapshot.db"
+    sentinel = b"concurrent winner"
+
+    def concurrent_create(src, dst):
+        Path(dst).write_bytes(sentinel)
+        raise FileExistsError(dst)
+
+    monkeypatch.setattr(flow.os, "link", concurrent_create)
+
+    with pytest.raises(flow.FlowError):
+        flow.backup_database(c, backup)
+
+    assert backup.read_bytes() == sentinel
+    assert not list(tmp_path.glob(f".{backup.name}.*.tmp"))
     c.close()
 
 
