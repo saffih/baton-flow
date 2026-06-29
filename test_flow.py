@@ -468,12 +468,13 @@ def test_session_falls_back_when_label_dry(conn):  # HLD-010
     assert t is not None and t["id"] == b
 
 
-def test_hld010_verify_invariant(conn):
+def test_hld010_routing_affinity_subset(conn):
     """HLD-010: a session prefers its bound label, binds to the label of the first
     labeled task it claims, and falls back to any runnable task only when none of its
     label remain; a session sees none only when no runnable work exists.
 
-    Full VERIFY coverage accounting: test_hld010_anonymous_session_path_deferred."""
+    Full VERIFY coverage accounting, including deferred no-anonymous-path behavior:
+    test_hld010_anonymous_session_path_deferred."""
     # backward compat: no session → oldest runnable task
     oldest = flow.add(conn, "oldest", label="x")
     flow.add(conn, "newer", label="y")
@@ -505,7 +506,7 @@ def test_hld010_anonymous_session_path_deferred(conn):
     name is durable — reclaim takes the task, not the identity
 
     Implemented: label affinity, fallback routing, none-when-empty, durable identity
-    (test_hld010_verify_invariant, test_session_* tests).
+    (test_hld010_routing_affinity_subset, test_session_* tests).
     Deferred: mandatory named session — anonymous claims (assignee=None) still succeed;
     the no-anonymous-path invariant is not yet enforced."""
     tid = flow.add(conn, "work")
@@ -676,7 +677,8 @@ def test_hld014_explicit_reclaim_deferred(conn):
 
 
 def test_runner_verb_contracts(conn):
-    # SC-001: each of the 8 runner verbs exercises its documented contract in isolation.
+    # SC-001: each runner verb exercises its behavior in isolation. This is not
+    # mandatory-session enforcement; HLD-009's no-anonymous-path clause is deferred.
     # add: creates a pending task
     tid = flow.add(conn, "work item")
     assert state(conn, tid) == "pending"
@@ -919,11 +921,12 @@ def test_hld008_verify_invariant(conn, tmp_path):
     assert any(e["kind"] == "note" and "critical finding" in e["text"] for e in entries)
 
 
-def test_hld009_verify_invariant():
+def test_hld009_runner_contract_subset():
     """HLD-009: runners use only the listed verbs with no direct database access;
     human/ops verbs (reply, reopen, list) are absent from the runner loop.
 
-    Full VERIFY coverage accounting: test_hld009_session_enforcement_deferred."""
+    Full VERIFY coverage accounting, including deferred mandatory-session behavior:
+    test_hld009_session_enforcement_deferred."""
     core = (Path(flow.__file__).parent / "core.md").read_text()
 
     # no direct database access — core.md must not reference sqlite3 or .db paths
@@ -954,7 +957,7 @@ def test_hld009_session_enforcement_deferred(tmp_path):
     list, and reclaim are human/ops-facing; feedback steers and add/feedback create work
 
     Implemented: runner verb contract, no direct DB access, human/ops verb separation
-    (test_hld009_verify_invariant).
+    (test_hld009_runner_contract_subset).
     Deferred: mandatory session at CLI entry — anonymous path still accepted; reclaim
     verb not yet implemented (HLD-014); feedback verb not yet implemented; answer verb
     is named reply in code (naming alignment deferred)."""
@@ -1009,8 +1012,9 @@ def test_hld016_outcome_mandatory_report_deferred(conn):
     lifecycle; a deprecated or obsolete report is immutable and a reference to it resolves
     to its live successor; every report update is attributed.
 
-    Outcome mandatory is implemented; report verb surface is a deferred extension
-    (HLD-009, HLD.md lines 489-493)."""
+    Implemented here: a provided done outcome is persisted as the task's bound account.
+    Deferred: report verb surface and report lifecycle/storage remain a separate
+    extension (HLD-009, HLD.md lines 489-493)."""
     tid = flow.add(conn, "outcome task")
     flow.done(conn, tid, "shipped the feature")
     assert flow._task(conn, tid)["outcome"] == "shipped the feature"
