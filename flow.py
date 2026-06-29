@@ -323,12 +323,19 @@ def escalate(conn, task_id, question, session=None):
         t = _task(conn, task_id)
         if t["state"] == "done":
             raise FlowError(f"task {task_id} is done; reopen it before escalating")
+        open_esc = conn.execute(
+            "SELECT 1 FROM escalations WHERE task_id=? AND answer IS NULL LIMIT 1",
+            (task_id,),
+        ).fetchone()
+        if open_esc:
+            raise FlowError(f"task {task_id} already has an open escalation")
         conn.execute(
             "INSERT INTO escalations (task_id, question, created_at) VALUES (?,?,?)",
             (task_id, question, now()),
         )
         _append(conn, task_id, "escalation", question)
         _set_state(conn, task_id, "blocked")
+        conn.execute("UPDATE tasks SET assignee=NULL WHERE id=?", (task_id,))
     project(conn, task_id)
 
 
@@ -351,6 +358,7 @@ def split(conn, task_id, child_texts, session=None):
             child_ids.append(cid)
         _append(conn, task_id, "split", f"split into tasks {child_ids}")
         _set_state(conn, task_id, "blocked")
+        conn.execute("UPDATE tasks SET assignee=NULL WHERE id=?", (task_id,))
     project(conn, task_id)
     for cid in child_ids:
         project(conn, cid)
