@@ -299,6 +299,7 @@ def test_cli_exposes_only_contract_verbs():
     assert verbs == {
         "add", "next", "context", "note", "done",
         "escalate", "split", "decide", "reply", "reopen", "list",
+        "backup", "check",
     }
 
 
@@ -397,6 +398,208 @@ def test_connection_hardening(tmp_path):  # HLD-013
     assert c.execute("PRAGMA busy_timeout").fetchone()[0] >= 1000
     assert c.execute("PRAGMA synchronous").fetchone()[0] == 1  # NORMAL
     c.close()
+
+
+def test_backup_database_is_readable_snapshot_while_source_open(tmp_path):
+    db = tmp_path / "live.db"
+    backup = tmp_path / "backup.db"
+    c = flow.connect(db)
+    tid = flow.add(c, "preserve me", label="ops")
+    flow.next_task(c, assignee="runner")
+    flow.note(c, tid, "important baton entry")
+    flow.done(c, tid, "finished safely", session="runner")
+
+    flow.backup_database(c, backup)
+
+    restored = flow.connect(backup)
+    try:
+        task, entries = flow.context(restored, tid)
+        assert task["text"] == "preserve me"
+        assert task["state"] == "done"
+        assert task["outcome"] == "finished safely"
+        assert any(e["kind"] == "note" and "important baton entry" in e["text"] for e in entries)
+        assert flow.integrity_check(restored) == ["ok"]
+    finally:
+        restored.close()
+        c.close()
+
+
+def test_backup_cleans_up_temp_file_after_success(tmp_path):
+    db = tmp_path / "flow.db"
+    backup = tmp_path / "snapshot.db"
+    c = flow.connect(db)
+    flow.add(c, "temp cleanup")
+    before = set(tmp_path.iterdir())
+
+    flow.backup_database(c, backup)
+
+    after = set(tmp_path.iterdir())
+    assert backup.exists()
+    assert after - before == {backup}
+    assert not list(tmp_path.glob(f".{backup.name}.*.tmp"))
+    c.close()
+
+
+def test_cli_backup_and_check_commands(tmp_path, capsys):
+    db = tmp_path / "flow.db"
+    backup = tmp_path / "snapshot.db"
+    assert flow.main(["--db", str(db), "add", "cli preserved"]) == 0
+
+    assert flow.main(["--db", str(db), "backup", str(backup)]) == 0
+    out = capsys.readouterr().out
+    assert str(backup) in out
+
+    assert flow.main(["--db", str(backup), "check"]) == 0
+    out = capsys.readouterr().out
+    assert out.strip() == "ok"
+
+    restored = flow.connect(backup)
+    try:
+        assert flow._task(restored, 1)["text"] == "cli preserved"
+    finally:
+        restored.close()
+
+
+def test_backup_refuses_to_overwrite_existing_file(tmp_path):
+    c = flow.connect(tmp_path / "flow.db")
+    backup = tmp_path / "snapshot.db"
+    sentinel = b"already here"
+    backup.write_bytes(sentinel)
+    with pytest.raises(flow.FlowError):
+        flow.backup_database(c, backup)
+    assert backup.read_bytes() == sentinel
+    c.close()
+
+
+def test_backup_integrity_failure_does_not_publish_destination_or_temp(tmp_path, monkeypatch):
+    c = flow.connect(tmp_path / "flow.db")
+    flow.add(c, "bad backup")
+    backup = tmp_path / "snapshot.db"
+
+    monkeypatch.setattr(flow, "_integrity_check_connection", lambda conn: ["not ok"])
+
+    with pytest.raises(flow.FlowError):
+        flow.backup_database(c, backup)
+
+    assert not backup.exists()
+    assert not list(tmp_path.glob(f".{backup.name}.*.tmp"))
+    c.close()
+
+
+def test_backup_publish_failure_does_not_publish_destination_or_temp(tmp_path, monkeypatch):
+    c = flow.connect(tmp_path / "flow.db")
+    flow.add(c, "publish failure")
+    backup = tmp_path / "snapshot.db"
+
+    def fail_link(src, dst):
+        raise OSError("simulated publish failure")
+
+    monkeypatch.setattr(flow.os, "link", fail_link)
+
+    with pytest.raises(OSError):
+        flow.backup_database(c, backup)
+
+    assert not backup.exists()
+    assert not list(tmp_path.glob(f".{backup.name}.*.tmp"))
+    c.close()
+
+
+def test_backup_publish_race_preserves_concurrent_destination(tmp_path, monkeypatch):
+    c = flow.connect(tmp_path / "flow.db")
+    flow.add(c, "publish race")
+    backup = tmp_path / "snapshot.db"
+    sentinel = b"concurrent winner"
+
+    def concurrent_create(src, dst):
+        Path(dst).write_bytes(sentinel)
+        raise FileExistsError(dst)
+
+    monkeypatch.setattr(flow.os, "link", concurrent_create)
+
+    with pytest.raises(flow.FlowError):
+        flow.backup_database(c, backup)
+
+    assert backup.read_bytes() == sentinel
+    assert not list(tmp_path.glob(f".{backup.name}.*.tmp"))
+    c.close()
+
+
+def test_cli_backup_requires_existing_source_database(tmp_path):
+    missing = tmp_path / "missing.db"
+    backup = tmp_path / "snapshot.db"
+    assert flow.main(["--db", str(missing), "backup", str(backup)]) == 1
+    assert not missing.exists()
+    assert not backup.exists()
+
+
+def test_cli_backup_does_not_migrate_source_database(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "legacy.db"
+    backup = tmp_path / "backup.db"
+    raw = sqlite3.connect(db)
+    raw.executescript(
+        """
+        CREATE TABLE tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT NOT NULL,
+            state TEXT NOT NULL DEFAULT 'pending',
+            assignee TEXT,
+            parent_id INTEGER,
+            outcome TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE baton_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            text TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE escalations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            question TEXT NOT NULL,
+            answer TEXT,
+            created_at TEXT NOT NULL,
+            answered_at TEXT
+        );
+        CREATE TABLE sessions (
+            name TEXT PRIMARY KEY,
+            bound_label TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        """
+    )
+    raw.commit()
+    raw.close()
+
+    assert flow.main(["--db", str(db), "backup", str(backup)]) == 0
+
+    source = sqlite3.connect(db)
+    try:
+        cols = {row[1] for row in source.execute("PRAGMA table_info(tasks)").fetchall()}
+        assert "label" not in cols
+        assert "reclaim_count" not in cols
+    finally:
+        source.close()
+
+
+def test_cli_check_requires_existing_database_without_creating_it(tmp_path):
+    missing = tmp_path / "missing.db"
+    assert flow.main(["--db", str(missing), "check"]) == 1
+    assert not missing.exists()
+    assert not (tmp_path / "missing.db-wal").exists()
+    assert not (tmp_path / "missing.db-shm").exists()
+
+
+def test_docs_warn_against_copying_only_wal_database():
+    docs = (Path(flow.__file__).parent / "README.md").read_text()
+    assert "Do not copy only `.flow/flow.db` while WAL is active" in docs
+    assert "flow backup" in docs
+    assert "-wal" in docs and "-shm" in docs
 
 
 def test_concurrent_next_claims_each_task_once(tmp_path):  # HLD-013
@@ -936,7 +1139,7 @@ def test_hld009_runner_contract_subset():
     import re
     flow_verbs_in_core = set(re.findall(r'flow\s+(\w+)', core))
     runner_verbs = {"add", "next", "context", "note", "done", "escalate", "split", "decide"}
-    human_ops_verbs = {"reply", "reopen", "list"}
+    human_ops_verbs = {"reply", "reopen", "list", "backup", "check"}
 
     assert not (flow_verbs_in_core & human_ops_verbs), (
         f"human/ops verbs found as CLI commands in core.md: "

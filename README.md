@@ -46,9 +46,22 @@ flow note 2 "using the shared form component"
 flow escalate 2 "OAuth or password?"  # park on a human; runner moves on
 flow reply 2 "OAuth"                  # (human) answer -> task wakes
 flow done 2 "form built with OAuth"   # rejected if deps unmet
+flow backup .flow/backup.db           # SQLite-safe backup; do not copy flow.db alone
+flow check                            # SQLite integrity_check
 flow list
 ```
 
 State lives in `.flow/flow.db`; human-readable batons are projected to `.flow/batons/`.
+
+## Persistence safety
+
+SQLite runs in WAL mode. Do not copy only `.flow/flow.db` while WAL is active:
+committed data may still be in `.flow/flow.db-wal`, with coordination state in
+`.flow/flow.db-shm`. Use `flow backup <path>` for a SQLite-safe snapshot. If you
+must perform a file-level copy, quiesce/checkpoint the database and copy
+`flow.db`, `flow.db-wal`, and `flow.db-shm` together.
+
+Use `flow check` to run SQLite `PRAGMA integrity_check` on the active database or
+on a backup before relying on it.
 
 Run the tests with `pytest`.

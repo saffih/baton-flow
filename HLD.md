@@ -262,17 +262,20 @@ Human/ops-facing (not part of the runner loop):
 | `flow reopen <id>` | Resurrect a `done` task to `pending` (rare; the norm is supersede — HLD-004). Runner- or human-**callable**, but not a routine **loop step** (see the permission-vs-loop note below). |
 | `flow reclaim <id>` | Deferred explicit reclaim verb (HLD-014). Current implementation has lazy lease-TTL reclaim inside `flow next`. |
 | `flow list` | List tasks with state. Session/liveness visibility is not implemented yet. Read-only. |
+| `flow backup <path>` | Write a SQLite-safe database snapshot for operational backup (HLD-013). |
+| `flow check` | Run SQLite `PRAGMA integrity_check` and print the result (HLD-013). |
 
 **Permission vs loop membership.** `core.md` defines the *routine loop* — claim → work →
 hand off → done. A verb being absent from that loop (the "human/ops" set: `reply`,
-`reopen`, `list`, plus deferred `answer`/`feedback`/`reclaim`) means it is *not a routine
-step*, **not** that a runner may not eventually call an implemented ops verb when its
-judgment calls for it (HLD-015). (`test_human_ops_verbs_absent_from_runner_loop`
-therefore checks *loop membership* — absence from `core.md` — not callability.)
+`reopen`, `list`, `backup`, `check`, plus deferred `answer`/`feedback`/`reclaim`) means it
+is *not a routine runner step*. This slice does not grant runner permission for
+`reply`/`reopen`/`list`; `backup` and `check` are operator maintenance verbs only. Any
+future runner-callability change needs its own HLD decision. (`test_human_ops_verbs_absent_from_runner_loop`
+therefore checks absence from `core.md`.)
 
 Runners use **only** these task/steering verbs — no direct database access, ever. The
 **report verb surface (HLD-016)** is a deliberate, separate extension to this contract that
-is *not yet enumerated*; until it is, this set is the task/steering layer and
+is *not yet enumerated*; until it is, this set is the task/steering plus maintenance layer and
 `test_cli_exposes_only_contract_verbs` covers exactly that layer.
 
 ## HLD-010 - Work routing (preferred named sessions, soft label affinity)
@@ -363,6 +366,13 @@ rides on it.
   stays `blocked` forever).
 - **Durable settings.** WAL journaling, a `busy_timeout` so a concurrent writer waits
   instead of failing with "database is locked," and `synchronous=NORMAL`.
+- **Operational backup.** Use `flow backup <path>` for live snapshots. It uses SQLite's
+  backup API and verifies the snapshot with `PRAGMA integrity_check`. Do not copy only
+  `.flow/flow.db` while WAL is active; committed data may still be in `.flow/flow.db-wal`
+  with coordination state in `.flow/flow.db-shm`. If doing a file-level copy instead,
+  quiesce/checkpoint the database and include the `-wal` and `-shm` companions.
+- **Integrity check.** Use `flow check` to run `PRAGMA integrity_check` explicitly before
+  larger behavior changes, after backup, or after moving a database.
 
 The markdown projection is written *after* the transaction commits; it is a re-derivable
 view, never part of a transaction.
