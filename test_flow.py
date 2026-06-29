@@ -499,16 +499,16 @@ def test_hld010_routing_affinity_subset(conn):
 def test_hld010_anonymous_session_path_deferred(conn):
     """HLD-010 coverage accounting.
 
-    HLD-010 VERIFY: every claim names a session and a missing name is an error (no
-    anonymous path); a session prefers its bound label, binds to the label of the first
-    labeled task it claims, and falls back to any runnable task only when none of its
-    label remain; a session sees none only when no runnable work exists; the declared
-    name is durable — reclaim takes the task, not the identity
+    HLD-010 VERIFY: named claims are preferred and missing-session claims remain a
+    temporary legacy path, explicitly tracked as a gap; a session prefers its bound label,
+    binds to the label of the first labeled task it claims, and falls back to any runnable
+    task only when none of its label remain; a session sees none only when no runnable work
+    exists; the declared name is durable — lazy reclaim takes the task, not the identity
 
     Implemented: label affinity, fallback routing, none-when-empty, durable identity
     (test_hld010_routing_affinity_subset, test_session_* tests).
-    Deferred: mandatory named session — anonymous claims (assignee=None) still succeed;
-    the no-anonymous-path invariant is not yet enforced."""
+    Transition policy C: named sessions are preferred now and should become mandatory
+    later; anonymous claims (assignee=None) still succeed temporarily."""
     tid = flow.add(conn, "work")
     t = flow.next_task(conn)
     assert t is not None and t["id"] == tid, "anonymous claim should still succeed (gap)"
@@ -655,20 +655,19 @@ def test_cli_done_accepts_assignee_form(tmp_path):  # HLD-014
 def test_hld014_explicit_reclaim_deferred(conn):
     """HLD-014 coverage accounting.
 
-    HLD-014 VERIFY: a non-responsive session's task is reclaimable two ways — an
-    explicit flow reclaim acts immediately on an observed non-response, and a lazy
-    lease-TTL backstop reclaims silent tasks automatically; reclaim returns the task to
-    pending (in_progress only, never blocked), clears assignee, records the reason, and
-    saturates reclaim_count at RECLAIM_MAX as a permanent flaky-mark — at or past the
-    ceiling every further orphaning escalates immediately; ownership-implying transitions
-    by a session that is not the current owner are rejected, while an unowned task stays
-    operable by any named session; note/decide stay multi-writer and feedback (like add)
-    is an unfenced creation verb; reclaim runs under the claim's BEGIN IMMEDIATE
+    HLD-014 VERIFY: lazy lease-TTL reclaim is implemented inside flow next and explicit
+    flow reclaim is deferred; lazy reclaim returns a silent in_progress task to pending,
+    clears assignee, records the reason, and saturates reclaim_count at RECLAIM_MAX as a
+    permanent flaky-mark — at or past the ceiling every further orphaning escalates
+    immediately; ownership-implying transitions by a named session that is not the current
+    owner are rejected, while legacy anonymous/unowned paths remain temporarily operable;
+    note/decide stay multi-writer; feedback as a creation/steering verb is deferred; lazy
+    reclaim runs under the claim's BEGIN IMMEDIATE
 
     Implemented: lazy lease-TTL reclaim, fence, flaky-mark, escalation ceiling,
     blackboard multi-writer (test_orphaned_task_reclaimed and sibling HLD-014 tests).
-    Deferred: explicit flow reclaim verb — not yet in the public API; feedback verb —
-    not yet implemented (add is the only unfenced creation verb today)."""
+    Transition policy C: explicit flow reclaim and feedback stay deferred; anonymous and
+    unowned cleanup paths remain temporary compatibility gaps."""
     assert not hasattr(flow, "reclaim"), "reclaim() appeared — promote this to a real test"
     assert not hasattr(flow, "feedback"), "feedback() appeared — promote this to a real test"
 
@@ -951,16 +950,16 @@ def test_hld009_runner_contract_subset():
 def test_hld009_session_enforcement_deferred(tmp_path):
     """HLD-009 coverage accounting.
 
-    HLD-009 VERIFY: every CLI call carries a recognized session, enforced at the CLI
-    entry — a missing session is an error, there is no anonymous path, reads included;
-    runners use only the listed verbs with no direct database access; answer, reopen,
-    list, and reclaim are human/ops-facing; feedback steers and add/feedback create work
+    HLD-009 VERIFY: named sessions are preferred and should become mandatory later, but
+    the legacy anonymous path remains temporarily allowed; runners use only the listed
+    implemented verbs with no direct database access; reply is the current human answer
+    verb; feedback, answer naming, and explicit reclaim remain tracked alignment gaps;
+    lazy lease-TTL reclaim is the implemented reclaim path
 
     Implemented: runner verb contract, no direct DB access, human/ops verb separation
     (test_hld009_runner_contract_subset).
-    Deferred: mandatory session at CLI entry — anonymous path still accepted; reclaim
-    verb not yet implemented (HLD-014); feedback verb not yet implemented; answer verb
-    is named reply in code (naming alignment deferred)."""
+    Transition policy C: mandatory sessions, explicit reclaim, answer naming, and
+    feedback are tracked future alignment work, not completed behavior."""
     db = str(tmp_path / "flow.db")
     assert flow.main(["--db", db, "add", "task"]) == 0
     rc = flow.main(["--db", db, "next"])
@@ -983,9 +982,10 @@ def test_hld015_invariant_tagging_contract():
     """HLD-015 VERIFY: every raise FlowError in flow.py is tagged with the one invariant
     it protects, drawn from the closed set dependency, identity, ownership, lifecycle,
     existence; a raise that cannot be honestly tagged from that set is flagged for review
-    as candidate overreach; the agent-discretion behaviors (done/escalate/split from any
-    non-blocked state, answer-then-runner-decides, feedback-magnitude-is-judged,
-    waking-as-a-decision) are intentional, not defects"""
+    as candidate overreach; the target agent-discretion behaviors (done/escalate/split
+    from any non-blocked state, answer-then-runner-decides,
+    feedback-magnitude-is-judged, waking-as-a-decision) are intentional, not defects,
+    while answer/feedback naming remains a tracked transition gap"""
     src = Path(flow.__file__).read_text()
     lines = src.splitlines()
     tag_re = re.compile(r"# INVARIANT: (dependency|identity|ownership|lifecycle|existence)")
