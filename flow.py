@@ -299,6 +299,7 @@ def next_task(conn, assignee=None):
                 "UPDATE tasks SET state='in_progress', assignee=?, updated_at=? WHERE id=?",
                 (assignee, now(), tid),
             )
+            _append(conn, tid, "system", f"claimed by {assignee or 'anonymous'}")
     for rid in reclaimed:  # refresh projections for tasks reclaimed/escalated above
         if rid != tid:
             project(conn, rid)

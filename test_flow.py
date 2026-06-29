@@ -42,6 +42,24 @@ def test_next_claims_in_progress(conn):
     assert t["assignee"] == "alice"
 
 
+def test_claim_recorded_on_baton(conn):
+    """HLD-013: each claim records 'claimed by session' on the baton."""
+    flow.add(conn, "task")
+    flow.next_task(conn, assignee="alice")
+    _, entries = flow.context(conn, 1)
+    system_texts = [e["text"] for e in entries if e["kind"] == "system"]
+    assert any("claimed by alice" in t for t in system_texts)
+
+
+def test_anonymous_claim_recorded_on_baton(conn):
+    """HLD-013: anonymous claims still leave durable evidence."""
+    flow.add(conn, "task")
+    flow.next_task(conn)
+    _, entries = flow.context(conn, 1)
+    system_texts = [e["text"] for e in entries if e["kind"] == "system"]
+    assert any("claimed by anonymous" in t for t in system_texts)
+
+
 def test_next_returns_none_when_empty(conn):
     assert flow.next_task(conn, assignee="alice") is None
 
