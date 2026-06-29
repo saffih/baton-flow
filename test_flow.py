@@ -211,14 +211,6 @@ def test_next_skips_split_blocked_parent(conn):
 # --- baton stage 0/1: escalate/split HLD divergences -----------------------
 
 
-def test_double_escalation_characterization(conn):
-    # Documents current (divergent) behavior: a second escalate succeeds.
-    tid = flow.add(conn, "task")
-    flow.escalate(conn, tid, "first question")
-    flow.escalate(conn, tid, "second question")
-    assert state(conn, tid) == "blocked"
-
-
 def test_double_escalation_rejected(conn):
     # HLD-005: one open escalation at a time; a second must be rejected.
     tid = flow.add(conn, "task")

@@ -323,6 +323,12 @@ def escalate(conn, task_id, question, session=None):
         t = _task(conn, task_id)
         if t["state"] == "done":
             raise FlowError(f"task {task_id} is done; reopen it before escalating")
+        open_esc = conn.execute(
+            "SELECT 1 FROM escalations WHERE task_id=? AND answer IS NULL LIMIT 1",
+            (task_id,),
+        ).fetchone()
+        if open_esc:
+            raise FlowError(f"task {task_id} already has an open escalation")
         conn.execute(
             "INSERT INTO escalations (task_id, question, created_at) VALUES (?,?,?)",
             (task_id, question, now()),
