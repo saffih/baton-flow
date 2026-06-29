@@ -208,6 +208,84 @@ def test_next_skips_split_blocked_parent(conn):
     assert claimed is None or claimed["id"] != parent
 
 
+# --- baton stage 0/1: escalate/split HLD divergences -----------------------
+
+
+def test_double_escalation_characterization(conn):
+    # Documents current (divergent) behavior: a second escalate succeeds.
+    tid = flow.add(conn, "task")
+    flow.escalate(conn, tid, "first question")
+    flow.escalate(conn, tid, "second question")
+    assert state(conn, tid) == "blocked"
+
+
+def test_double_escalation_rejected(conn):
+    # HLD-005: one open escalation at a time; a second must be rejected.
+    tid = flow.add(conn, "task")
+    flow.escalate(conn, tid, "first question")
+    with pytest.raises(flow.FlowError):
+        flow.escalate(conn, tid, "second question")
+
+
+def test_escalate_keeps_assignee_characterization(conn):
+    # Documents current (divergent) behavior: assignee stays after escalate.
+    tid = flow.add(conn, "task")
+    flow.next_task(conn, assignee="alice")
+    assert flow._task(conn, tid)["assignee"] == "alice"
+    flow.escalate(conn, tid, "blocked on review")
+    assert flow._task(conn, tid)["assignee"] == "alice"
+
+
+def test_escalate_clears_assignee(conn):
+    # HLD-004/005: a task parked as blocked is unassigned.
+    tid = flow.add(conn, "task")
+    flow.next_task(conn, assignee="alice")
+    flow.escalate(conn, tid, "blocked on review")
+    assert flow._task(conn, tid)["assignee"] is None
+
+
+def test_escalate_keeps_label(conn):
+    # HLD-005: clear assignee but keep label — regression guard.
+    tid = flow.add(conn, "task", label="backend")
+    flow.next_task(conn, assignee="alice")
+    flow.escalate(conn, tid, "blocked")
+    assert flow._task(conn, tid)["label"] == "backend"
+
+
+def test_split_keeps_parent_assignee_characterization(conn):
+    # Documents current (divergent) behavior: parent assignee stays after split.
+    tid = flow.add(conn, "task")
+    flow.next_task(conn, assignee="alice")
+    assert flow._task(conn, tid)["assignee"] == "alice"
+    flow.split(conn, tid, ["sub a", "sub b"])
+    assert flow._task(conn, tid)["assignee"] == "alice"
+
+
+def test_split_clears_parent_assignee(conn):
+    # HLD-004/005: split parks parent as blocked; assignee must be cleared.
+    tid = flow.add(conn, "task")
+    flow.next_task(conn, assignee="alice")
+    flow.split(conn, tid, ["sub a", "sub b"])
+    assert flow._task(conn, tid)["assignee"] is None
+
+
+def test_split_children_have_no_assignee(conn):
+    # Regression guard: split children start with no assignee.
+    tid = flow.add(conn, "task")
+    flow.next_task(conn, assignee="alice")
+    kids = flow.split(conn, tid, ["sub a", "sub b"])
+    for kid in kids:
+        assert flow._task(conn, kid)["assignee"] is None
+
+
+def test_split_keeps_parent_label(conn):
+    # HLD-005: split clears assignee but keeps label — regression guard.
+    tid = flow.add(conn, "task", label="backend")
+    flow.next_task(conn, assignee="alice")
+    flow.split(conn, tid, ["sub a"])
+    assert flow._task(conn, tid)["label"] == "backend"
+
+
 # --- CLI smoke -------------------------------------------------------------
 
 
