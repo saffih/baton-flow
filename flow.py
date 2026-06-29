@@ -563,8 +563,43 @@ def project(conn, task_id):
 # --- CLI -------------------------------------------------------------------
 
 
+SESSION_REQUIRED_COMMANDS = {
+    "add",
+    "next",
+    "note",
+    "done",
+    "escalate",
+    "split",
+    "decide",
+    "reply",
+    "reopen",
+}
+
+
 def _print_task(t):
     print(f"#{t['id']} [{t['state']}] {t['text']}")
+
+
+def _add_session_flags(parser):
+    parser.add_argument("--session")
+    parser.add_argument("--assignee")
+
+
+def _normalize_cli_session(args):
+    session = getattr(args, "session", None)
+    assignee = getattr(args, "assignee", None)
+    if session and assignee and session != assignee:
+        # INVARIANT: identity
+        raise FlowError("conflicting --session and --assignee values")
+    effective = session or assignee
+    if args.cmd in SESSION_REQUIRED_COMMANDS and not effective:
+        # INVARIANT: identity
+        raise FlowError(f"flow {args.cmd} requires --session")
+    if hasattr(args, "session"):
+        args.session = effective
+    if hasattr(args, "assignee"):
+        args.assignee = effective
+    return effective
 
 
 def main(argv=None, db_path=None):
@@ -576,9 +611,10 @@ def main(argv=None, db_path=None):
     p = sub.add_parser("add", help="create a task")
     p.add_argument("text")
     p.add_argument("--label")
+    _add_session_flags(p)
 
     p = sub.add_parser("next", help="claim the next runnable task")
-    p.add_argument("--session", "--assignee", dest="assignee")
+    _add_session_flags(p)
 
     p = sub.add_parser("context", help="read a task's baton")
     p.add_argument("id", type=int)
@@ -586,32 +622,36 @@ def main(argv=None, db_path=None):
     p = sub.add_parser("note", help="append to the baton")
     p.add_argument("id", type=int)
     p.add_argument("text")
+    _add_session_flags(p)
 
     p = sub.add_parser("done", help="complete a task")
     p.add_argument("id", type=int)
     p.add_argument("outcome")
-    p.add_argument("--session", "--assignee", dest="session")
+    _add_session_flags(p)
 
     p = sub.add_parser("escalate", help="park a task waiting on a human")
     p.add_argument("id", type=int)
     p.add_argument("question")
-    p.add_argument("--session", "--assignee", dest="session")
+    _add_session_flags(p)
 
     p = sub.add_parser("split", help="spawn children; park the parent")
     p.add_argument("id", type=int)
     p.add_argument("children", nargs="+")
-    p.add_argument("--session", "--assignee", dest="session")
+    _add_session_flags(p)
 
     p = sub.add_parser("decide", help="record a decision")
     p.add_argument("id", type=int)
     p.add_argument("text")
+    _add_session_flags(p)
 
     p = sub.add_parser("reply", help="(human) answer a blocked task")
     p.add_argument("id", type=int)
     p.add_argument("text")
+    _add_session_flags(p)
 
     p = sub.add_parser("reopen", help="reopen a done task")
     p.add_argument("id", type=int)
+    _add_session_flags(p)
 
     sub.add_parser("list", help="list all tasks")
 
@@ -621,6 +661,12 @@ def main(argv=None, db_path=None):
     sub.add_parser("check", help="run SQLite integrity_check")
 
     args = parser.parse_args(argv)
+    try:
+        _normalize_cli_session(args)
+    except FlowError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
     db_path = Path(args.db)
     if args.cmd in {"backup", "check"}:
         try:
