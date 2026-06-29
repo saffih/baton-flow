@@ -1,8 +1,9 @@
 # CLI Verb Contract — HLD-009
 
-**Source**: HLD-009 (amended 2026-06-03 to add `flow list`)
-**HLD-VERIFY**: runners use only the listed verbs; no direct database access;
-reply, reopen, and list are human/ops-facing and not part of the runner loop
+**Source**: HLD-009 / HLD-013 (amended to add maintenance verbs)
+**HLD-VERIFY**: runners use only the listed implemented verbs with no direct
+database access; reply/list/reopen and persistence maintenance verbs are
+human/ops-facing and not part of the runner loop
 
 ---
 
@@ -35,9 +36,22 @@ Not part of the runner loop. Runners MUST NOT call these.
 
 ---
 
+## Operator Maintenance Verbs (2)
+
+Operator-facing persistence maintenance. Not part of the runner loop; never
+transitions task state.
+
+| Verb | Arguments | Effect |
+|---|---|---|
+| `flow backup` | `<path>` | Write a SQLite-safe backup snapshot. Read-only against task state |
+| `flow check` | _(none)_ | Run SQLite `PRAGMA integrity_check`. Read-only |
+
+---
+
 ## Invariants
 
-- Total verb count: 11 (8 runner + 3 human/ops)
+- Total verb count: 13 (8 runner + 5 human/ops/maintenance)
 - No direct database access by any runner
 - `flow add` is dual-use: primary human creation verb AND runner off-topic reply branch
 - `flow list` is read-only: it never transitions state
+- `flow backup` and `flow check` never transition task state

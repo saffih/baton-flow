@@ -95,6 +95,17 @@ def connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def connect_existing_readonly(db_path: Path) -> sqlite3.Connection:
+    """Open an existing database for diagnostics without creating or migrating it."""
+    db_path = Path(db_path)
+    if not db_path.exists():
+        # INVARIANT: existence
+        raise FlowError(f"database does not exist: {db_path}")
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def _migrate(conn):
     """Add columns introduced after a database was first created.
 
@@ -441,6 +452,45 @@ def list_tasks(conn):
     return conn.execute("SELECT * FROM tasks ORDER BY id").fetchall()
 
 
+def _main_database_path(conn):
+    for row in conn.execute("PRAGMA database_list").fetchall():
+        if row["name"] == "main" and row["file"]:
+            return Path(row["file"])
+    return None
+
+
+def integrity_check(conn):
+    """Return SQLite integrity_check rows for the active database."""
+    return [row[0] for row in conn.execute("PRAGMA integrity_check").fetchall()]
+
+
+def backup_database(conn, dest_path):
+    """Create a SQLite-safe snapshot of the live database.
+
+    This avoids the WAL-mode footgun of copying only flow.db while committed
+    pages may still live in flow.db-wal.
+    """
+    dest_path = Path(dest_path)
+    source_path = _main_database_path(conn)
+    if source_path is not None and dest_path.resolve() == source_path.resolve():
+        # INVARIANT: existence
+        raise FlowError("backup destination must be different from the source database")
+    if dest_path.exists():
+        # INVARIANT: existence
+        raise FlowError(f"backup destination already exists: {dest_path}")
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    dest = sqlite3.connect(dest_path)
+    try:
+        conn.backup(dest)
+        result = [row[0] for row in dest.execute("PRAGMA integrity_check").fetchall()]
+    finally:
+        dest.close()
+    if result != ["ok"]:
+        # INVARIANT: existence
+        raise FlowError(f"backup integrity check failed: {'; '.join(result)}")
+    return dest_path
+
+
 # --- markdown projection (one-way) -----------------------------------------
 
 
@@ -528,8 +578,25 @@ def main(argv=None, db_path=None):
 
     sub.add_parser("list", help="list all tasks")
 
+    p = sub.add_parser("backup", help="write a SQLite-safe database backup")
+    p.add_argument("path")
+
+    sub.add_parser("check", help="run SQLite integrity_check")
+
     args = parser.parse_args(argv)
-    conn = connect(Path(args.db))
+    db_path = Path(args.db)
+    if args.cmd in {"backup", "check"}:
+        try:
+            conn = connect_existing_readonly(db_path)
+            try:
+                return _dispatch(conn, args)
+            finally:
+                conn.close()
+        except FlowError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+
+    conn = connect(db_path)
     try:
         return _dispatch(conn, args)
     except FlowError as e:
@@ -570,6 +637,14 @@ def _dispatch(conn, args):
     elif args.cmd == "list":
         for t in list_tasks(conn):
             _print_task(t)
+    elif args.cmd == "backup":
+        path = backup_database(conn, Path(args.path))
+        print(f"backup written to {path}")
+    elif args.cmd == "check":
+        result = integrity_check(conn)
+        for line in result:
+            print(line)
+        return 0 if result == ["ok"] else 1
     return 0
 
 
