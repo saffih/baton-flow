@@ -2,34 +2,40 @@
 
 **Status**: Authoritative design. Single source of truth.
 **One line**: Context, intent, and decisions that survive every handoff between AI sessions.
+**Revision**: v2 (output-first) promoted 2026-07-03, with owner decisions applied
+(concurrent escalations; markdown projections as product surface; scope-boundary rework).
+
+This document states the **target design**. The current runtime implements a subset of it;
+HLD-017 records the design-vs-implementation gap and the candidate capabilities that are
+allowed but not committed. Sections HLD-001..016 are authoritative design regardless of
+implementation status.
 
 ---
 
 ## HLD-001 - What it is
 
 HLD-ID: HLD-001
-HLD-DESC: HLD-001 is in-scope purpose at medium risk, touching none; "what Baton Flow is — keeping AI work continuous across sessions".
+HLD-DESC: HLD-001 is in-scope purpose at medium risk, touching none; "what Baton Flow is — producing reliable outputs across AI sessions".
 HLD-ROLE: purpose
 HLD-STATUS: active
 HLD-RISK: MEDIUM
-HLD-SPECS: TBD
+HLD-SPECS: provisional (none assigned yet; assign when the first spec citing this section is drafted — revisit at the next SDD-gate assessment)
 HLD-RESOURCES: README.md,core.md
 
-Baton Flow keeps work continuous across AI-assisted sessions. You create tasks; a
-runner (an AI session, or you) picks one up, works it, and writes everything it
-learns onto a **baton** — a per-task document that travels from runner to runner so
-nothing is ever lost. When a runner can't finish — it needs a human call, or the work
-must be broken into pieces — it **hands off** and moves on. The work waits, the
-session never idles.
+Baton Flow exists to **produce trustworthy outputs across AI-assisted sessions** — durable
+deliverables (**reports**) that accumulate value as work proceeds, reliably and under human
+steering. You create tasks; a runner (an AI session, or you) claims one, works it, and the
+work's result becomes part of an output. Context survives every handoff so the output comes
+out good; the human sees and steers it at any moment.
 
-It exists to kill three specific pains:
-
-1. **Context loss** between AI sessions on multi-step work.
-2. **No visibility** into what the AI is doing while it works.
+It kills three pains — but they are the floor, not the point:
+1. **Context loss** between sessions on multi-step work.
+2. **No visibility** into what the AI is doing.
 3. **No way to steer** without starting over.
 
-The baton solves all three: it *is* the durable context, it's readable at any moment,
-and you steer by replying to it.
+The **report** is the point: the deliverable the system is *for*. The **baton** solves the
+three pains as the durable, readable, steerable context that makes good reports possible —
+it is the means, not the end.
 
 ## HLD-002 - Vocabulary
 
@@ -38,7 +44,7 @@ HLD-DESC: HLD-002 is in-scope reference at low risk, touching none; "load-bearin
 HLD-ROLE: reference
 HLD-STATUS: active
 HLD-RISK: LOW
-HLD-SPECS: TBD
+HLD-SPECS: provisional (none assigned yet; assign when the first spec citing this section is drafted — revisit at the next SDD-gate assessment)
 HLD-RESOURCES: core.md
 
 | Term | Meaning |
@@ -48,21 +54,31 @@ HLD-RESOURCES: core.md
 | **Baton** | The per-task document that carries context across handoffs. The shared blackboard for that task. (Replaces the old "WIP".) |
 | **Handoff** | The act of passing: escalate to a human, spawn sub-tasks, or wake a parked task. |
 | **Decision** | A recorded choice, durable and inspectable. |
+| **Escalation** | A question parked on a human, tracked as a distinct referenced dependency; a task may hold several open at once (HLD-005). |
 
 ## HLD-003 - Core model
 
 HLD-ID: HLD-003
-HLD-DESC: HLD-003 is in-scope governance at high risk, touching data and processing; "SQLite is the single source of truth; markdown is one-way".
+HLD-DESC: HLD-003 is in-scope governance at high risk, touching data and processing; "one durable store is the single source of truth; markdown projections are derived product surface".
 HLD-ROLE: governance
 HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,.flow/,.specify/memory/constitution.md
-HLD-VERIFY: SQLite is the only source of truth; markdown is a one-way projection, never an input; the loop depends only on the CLI + text and names no specific AI
+HLD-VERIFY: one durable state store is the single source of truth (currently SQLite — an implementation detail, replaceable without product change); markdown projections are derived, re-derivable product surface with three promised roles (agent integration/handoff, context state for work in progress, user-facing context and reporting); an agent may read a projection directly when it preserves stable IDs, task references, baton/context state, reply context, and links to relevant reports/logs; projections are never a write path; the loop depends only on the CLI + text and names no specific AI
 
-**Single source of truth.** A SQLite database holds all state. Markdown files are a
-**one-way projection** of the database for human reading — never an input. The
-database is truth; markdown is the view.
+**Single source of truth.** One durable state store holds all state (currently SQLite — an
+implementation detail, replaceable without product change; HLD-012). Markdown projections
+are **derived views** of that store: the store is canonical, projections are re-derivable
+and never part of a transaction (HLD-013).
+
+**Projections are product surface, not just display.** Markdown/report/context projections
+carry three promised roles: (1) an **integration and handoff surface for agents**, (2)
+**context state for work in progress**, (3) **user-facing context and reporting**. An agent
+may read a projection directly when that projection preserves stable IDs, task references,
+baton/context state, reply context, and links to the relevant reports/logs. Writes go
+through the CLI only — projections are not a write path, and reading one never makes it
+the source of truth.
 
 **The contract is agnostic.** The execution loop is defined in one file (`core.md`)
 that depends on **exactly two interfaces**: a **CLI** (the verbs a runner calls) and
@@ -75,7 +91,7 @@ the entire pluggability mechanism.
 runner (any AI, or human)
    │  runs the loop in core.md
    ▼
-CLI verbs  ──►  SQLite (source of truth)  ──►  markdown projection (read-only view)
+CLI verbs  ──►  durable store (source of truth)  ──►  markdown projection (derived product surface, read-only)
 ```
 
 ## HLD-004 - The task lifecycle
@@ -87,66 +103,68 @@ HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,test_flow.py
-HLD-VERIFY: only four states exist; a task cannot be done with unfinished children; done is reopenable via reopen() or a late reply(); blocked wakes to pending only when all dependencies resolve; the done/escalate/split guard is on dependencies (blocked check), not on prior state — agents may operate from any non-blocked state
-HLD-RATIONALE: done/escalate/split do not require in_progress as a pre-condition; agents decide completion — a review or cleanup agent may mark tasks done or restructure work without formally claiming them; requiring in_progress would break valid agent patterns such as marking stale tasks done in bulk; a late reply that reopens a done child does not auto-reopen the parent — enforcing the invariant retroactively would silently undo work the human accepted as done; the delegation model puts that decision in human hands
+HLD-VERIFY: only four states exist; a task cannot be done with unfinished children; done is reopenable via reopen() but the norm is to supersede with a new referencing task, not resurrect; a task parked as blocked is unassigned, keeping its label for affinity; blocked wakes to pending only when all dependencies resolve; the done/escalate/split guard is on dependencies, not on prior state — agents may operate from any non-blocked state
+HLD-RATIONALE: done/escalate/split do not require in_progress (HLD-015 delegation); parking clears the assignee so a woken task re-enters the claim flow rather than granting its former holder a silent resume — ownership is re-established only through flow next, while the kept label softly routes the same session back; reopen exists but supersede-via-new-task is the idiom (mirrors report supersession, HLD-016) — resurrecting a done task is the rare path
 
-Four states. `done` is a resting state, not a grave — it can be reopened.
+Four states. `done` is a resting state, not a grave.
 
 ```
 pending ──► in_progress ──► done
    ▲             │            │
-   │             ▼            │ reopen (by human, or a late reply)
+   │             ▼            │ reopen (rare; the norm is supersede via a new referencing task)
    │          blocked         │
    └─────────────┴────────────┘
         wake (dependency resolved)
 ```
 
 - `pending` — runnable: no unmet dependencies.
-- `in_progress` — a runner is working it.
-- `blocked` — parked, waiting on a dependency (a human answer and/or child tasks).
-- `done` — finished, but reopenable. Reopen explicitly with `flow reopen`, or send `flow reply` on it — a late reply signals the task was closed prematurely and reopens it to `pending`.
+- `in_progress` — a named session is working it.
+- `blocked` — parked on a dependency (one or more human answers and/or child tasks).
+  **Unassigned** — the former holder no longer owns it — but it keeps its `label` so
+  affinity (HLD-010) tends to route the same session back.
+- `done` — finished, reopenable. The **idiomatic** way to revisit done work is a *new task
+  referencing it* (supersede), exactly like report supersession (HLD-016); `reopen` (any
+  runner or human may call it) is the rare in-place resurrection.
 
-**The one rule that governs everything:** *a task is runnable only when it has no
-unmet dependencies.* A task cannot be `done` while it has unfinished children.
+**The one rule:** *a task is runnable only when it has no unmet dependencies.* A task cannot
+be `done` while it has unfinished children or open escalations.
 
-**State transitions and agent autonomy.** The diagram above shows the *typical* runner
-flow. Agents may call `done`, `escalate`, or `split` from any state that is not
-`blocked` by unmet dependencies. The only hard enforcement is the dependency guard: a
-task cannot be marked `done` while it has open escalations or unfinished children.
-Prior state (`pending` vs `in_progress`) is not enforced — the `in_progress` step is
-normal but not mandatory.
+**Agent autonomy (HLD-015).** The diagram is the *typical* flow. Agents may
+`done`/`escalate`/`split` from any non-`blocked` state; the only hard gate is the dependency
+guard. The `in_progress` step is normal but not mandatory.
 
-**Edge case: late reply on a done child.** When `flow reply` reopens a done child,
-its parent (if done) remains done — the dependency guard runs at transition time
-only, not retroactively. If the parent also needs reopening, the human does so
-explicitly with `flow reopen`. See HLD-RATIONALE for the reasoning.
+**Why parking unassigns.** Clearing the assignee on block means a woken task is re-claimed
+through `flow next` like any other — no silent shortcut back into a task never re-claimed.
+The kept label preserves stickiness without hidden ownership.
 
 ## HLD-005 - The wait model (fork-join)
 
 HLD-ID: HLD-005
-HLD-DESC: HLD-005 is in-scope architecture at high risk, touching processing; "the unified fork-join wait model (escalate == split)".
+HLD-DESC: HLD-005 is in-scope architecture at high risk, touching processing; "the unified fork-join wait model (escalate == split); concurrent escalations".
 HLD-ROLE: architecture
 HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,test_flow.py
-HLD-VERIFY: escalate and split both park the task as blocked and free the runner; the guard is that the task must not be done (not: must be in_progress); a task is runnable only when it has no unmet dependencies
-HLD-RATIONALE: escalate/split require only that the task is not already done; agents may restructure or park work from pending or blocked states without re-claiming; requiring in_progress would prevent valid agent restructuring and review operations
+HLD-VERIFY: escalate and split both park the task as blocked, clear its assignee (label kept), and free the runner; the guard is that the task must not be done; a task may hold multiple escalations open concurrently, each a distinct dependency with its own stable ID/reference, owner/reply routing, and status; a task is runnable only when all its dependencies — every open escalation and every unfinished child — are resolved
+HLD-RATIONALE: concurrent escalations are ratified product surface (owner decision 2026-07-03, superseding the one-open-escalation invariant as stale design residue); each escalation is a separately traceable dependency recorded on the baton, so the agent is never forced to package unrelated needs into one handoff and partial progress stays visible per escalation rather than tracked as a single "partial" slot; the task wakes only when every dependency resolves, which keeps the join semantics of fork-join intact
 
-Escalation and sub-tasking are **the same primitive**: a task becomes `blocked`
-because it's waiting on something, and the runner immediately moves to the next
-runnable task. The session never idles — it is the scarce resource and must keep
-working. A parked task may wait **minutes, days, or forever**; that costs nothing.
+Escalation and sub-tasking are **the same primitive**: a task becomes `blocked`, its
+assignee is cleared, and the runner moves to the next runnable task. The session never
+idles. A parked task may wait minutes, days, or forever; that costs nothing.
 
-A dependency is satisfied by an event:
+- **escalate** → waits on **a human answer**. A task may have **multiple escalations open
+  concurrently**; each is a distinct, separately traceable dependency recorded on the baton
+  with its own stable ID/reference, owner/reply routing, and status (HLD-007).
+- **split** → waits on **its child tasks finishing**.
 
-- **escalate** → the task waits on **a human answer**.
-- **split** → the task waits on **its child tasks finishing**.
-
-When every dependency resolves, the task wakes back to `pending`. Waking hands the
-runner a *decision*, not an obligation: the work may now be moot (mark `done`), or need
-more work, or be reopened. This is fork–join over a dependency graph — the same shape
-as `async/await` joins or a build-system DAG.
+When all dependencies resolve — every open escalation answered, every child finished — the
+task wakes to `pending` (unassigned) and is re-claimed through `flow next` like any other
+task (HLD-004). Waking hands the runner a *decision*, not an obligation. **Partial
+answers:** an answer resolves exactly the escalation it references; other open escalations
+keep the task parked. If an answer resolves only part of what its escalation asked, the
+agent re-escalates the remainder on pickup — completeness stays the agent's judgment and
+the system never tracks "partial".
 
 ## HLD-006 - Escalation triggers (runner → human)
 
@@ -155,7 +173,7 @@ HLD-DESC: HLD-006 is in-scope processing at medium risk, touching processing; "e
 HLD-ROLE: processing
 HLD-STATUS: active
 HLD-RISK: MEDIUM
-HLD-SPECS: TBD
+HLD-SPECS: provisional (none assigned yet; assign when the first spec citing this section is drafted — revisit at the next SDD-gate assessment)
 HLD-RESOURCES: core.md,flow.py
 
 The strength of the system is that a runner **stops and asks instead of guessing**. A
@@ -166,155 +184,189 @@ runner must escalate when:
 3. **Irreversibility** — an action is hard to undo (delete, deploy, external send, money). Confirm first.
 4. **Repeated failure** — ~3 attempts and still failing. Escalate rather than thrash or fake success.
 
-Any trigger → `flow escalate`, task → `blocked`, runner moves on.
+Any trigger → `flow escalate`, task → `blocked`, runner moves on. Distinct concerns may be
+escalated as distinct escalations on the same task (HLD-005) rather than bundled into one.
 
-## HLD-007 - Human-in-the-loop (human → runner)
+## HLD-007 - Human-in-the-loop: answer and feedback
 
 HLD-ID: HLD-007
-HLD-DESC: HLD-007 is in-scope processing at medium risk, touching processing; "human-in-the-loop replies route back to the runner".
+HLD-DESC: HLD-007 is in-scope processing at medium risk, touching processing; "human-in-the-loop: answer resolves a referenced open escalation, feedback steers".
 HLD-ROLE: processing
 HLD-STATUS: active
 HLD-RISK: MEDIUM
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,core.md
-HLD-VERIFY: a human reply is appended to the baton and resolves the open escalation when the task is blocked; a reply to a done task reopens it to pending (late reply — signals premature completion); when the task wakes, the runner either continues this task or creates a new related task from the reply without silently merging scopes
-HLD-RATIONALE: reply() reopens done tasks because humans can signal premature completion ("you thought you were done but missed X"); the runner re-reads the baton and decides: continue, create new scope, or re-close
+HLD-VERIFY: answer resolves the specific escalation it references — appended to the task's baton, resolves that escalation, and wakes the task once no dependencies remain (other open escalations keep it parked); answer is rejected when there is no matching open escalation; feedback steers — on a report it drives an agent-judged update (in-place, section, supersede, or sweep), and as new scope it creates a referenced task; feedback never forces a state change a guard would forbid; an answer is always about the escalation it resolves
+HLD-RATIONALE: the v1 reply verb was overloaded across six states and carried a runner-side "is this new scope?" branch; the discriminator "was the task waiting for this?" splits it — yes is an answer (a fork-join join, in-band, addressed to a specific open escalation), no is feedback (steering output or injecting scope). The human picks the channel, so answer never guesses; with concurrent escalations (HLD-005) the answer names which escalation it resolves, so routing stays explicit; the magnitude of a feedback response is the agent's judgment (HLD-015), not hardcoded into a verb
 
-When the human answers a blocked task, the reply is always recorded on the baton and
-the open escalation is resolved. When the human replies to a `done` task, the task
-reopens to `pending` — a signal that it was closed prematurely (late reply).
-When the task wakes, one binary question decides how the runner uses that reply:
+The rule that separates the two:
 
-> **Is the reply about this task itself?**
->
-> - **Yes** → continue this task using the reply that is already on the baton.
-> - **No** → create a **new related task** from the reply, then explicitly continue,
->   re-park, or finish the original task.
+> **`answer`** responds to a question the task is waiting on. **`feedback`** steers — it
+> comments on output or injects scope a task wasn't waiting on.
 
-This keeps steering lossless and never silently merges unrelated scope into a task or
-pretends a new scope is an implicit dependency.
+**`answer <id> <text>`** — valid only when the task has a matching open escalation. It
+addresses a **specific escalation** by its stable ID/reference (implicit when exactly one
+is open). Appends to the task's baton, resolves that escalation, and wakes the task once no
+dependencies remain — other open escalations keep it parked (HLD-005). An answer is, by
+construction, **about the escalation it resolves** (no "is this new scope?" branch). If an
+answer happens to *reveal* new scope, the runner spins it off by its own judgment
+(HLD-015), never silently merging it. `answer` with no matching open escalation →
+rejected: *"nothing to answer; use feedback."*
 
-## HLD-008 - The baton (per-task document)
+**`feedback <id> <text>`** — steers. On a **report**, it drives an agent-judged update
+(HLD-016: in-place / section / supersede / sweep) — the human says what's wrong or wanted;
+the agent decides how big the response is. As **new scope**, it creates a referenced task
+(sugar over `add` + a reference): the new task is a regular pending task linked to the
+source (a db reference, **not** `parent_id`, so no fork-join dependency and a `done`/report
+source is never blocked or mutated). Feedback never reaches in and mutates a `done` task or
+a `deprecated` report — it produces *new* work or a *successor*.
+
+## HLD-008 - The baton: the context substrate
 
 HLD-ID: HLD-008
-HLD-DESC: HLD-008 is in-scope architecture at high risk, touching data and processing; "the baton is the DB-owned per-task document".
+HLD-DESC: HLD-008 is in-scope architecture at high risk, touching data and processing; "the baton is the DB-owned per-task context substrate (the means, not the output)".
 HLD-ROLE: architecture
 HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,.flow/batons/
-HLD-VERIFY: the baton lives in the database and is read via the CLI; markdown batons are a one-way projection; declared context is the only context the contract touches
+HLD-VERIFY: the baton lives in the database and its canonical read path is the CLI; markdown batons are a derived projection and product surface (HLD-003) that an agent may read directly when it preserves stable IDs, references, baton/context state, reply context, and report/log links; the baton carries a task's declared context (the means by which a handoff is lossless) and is distinct from the report, which is the output (HLD-016); declared context is the only context the contract touches
+HLD-RATIONALE: the baton is plumbing, not the product — it is the append-log of one task's journey that makes a handoff lossless so the report (the output) comes out good; conflating baton (context) with report (output) is the v1 framing this revision corrects
 
-The baton is a **blackboard**: a shared surface that multiple knowledge sources —
-the runner, its sub-tasks, and the human — all read and write. It is the artifact that
-makes a handoff lossless; the next runner reads the baton and keeps running.
+The baton is the **context substrate** — a per-task **blackboard** the runner, its
+sub-tasks, and the human all read and write. It makes a handoff lossless: the next runner
+reads the baton and keeps going. It is **not** the deliverable — the report is (HLD-016).
+The baton is *how a task went*; the report is *what was produced*.
 
-- **Declared context** lives on the baton: durable, inspectable, shared. This is the
-  only context the contract touches.
-- **Actual context** (a session's internal working memory) is private and out of scope.
-  *Future optimization:* route a task to whichever session already has its actual
-  context warm. Not built; noted.
-
-A runner MUST read a task's baton (`flow context <id>`) before working it, and append
-progress as it goes (`flow note`). Batons are read from the database via CLI, never
-from markdown files directly.
+- **Declared context** lives on the baton: durable, inspectable, shared — an append-log.
+- A runner MUST read a task's baton (`flow context <id>`) before working it and append
+  progress as it goes (`flow note`). The canonical read path is the CLI against the
+  database; the markdown projection is a derived handoff/integration surface (HLD-003),
+  never a write path.
 
 ## HLD-009 - The CLI contract
 
 HLD-ID: HLD-009
-HLD-DESC: HLD-009 is in-scope api at high risk, touching cli; "the flow CLI verbs are the runner contract".
+HLD-DESC: HLD-009 is in-scope api at high risk, touching cli; "the flow CLI verbs are the runner contract; every call is a named session".
 HLD-ROLE: api
 HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,flow,core.md
-HLD-VERIFY: runners use only the listed verbs; no direct database access; reply, reopen, and list are human/ops-facing and not part of the runner loop
+HLD-VERIFY: every CLI call carries a recognized session, enforced at the CLI entry — a missing session is an error, there is no anonymous path, reads included; runners use only the listed verbs with no direct database access; answer, reopen, list, and reclaim are human/ops-facing; feedback steers and add/feedback create work
+HLD-RATIONALE: the name a session declares is its bracelet (HLD-010) — accountability, not security; enforcing it once at the CLI entry (not per-verb) makes "no anonymous path" true for every command including reads, because a task and a report must always have a trackable actor behind every touch
 
-The entire runner-facing API is small. This is the agnostic surface.
+**Every invocation names its session** (`--session <name>`), enforced **at the CLI entry** —
+a call with no recognized session is an error, reads included. The CLI is for named
+sessions and nobody else. The tables below omit `--session` per row for brevity; it is
+required on **all** of them.
+
+Runner-facing (the loop):
 
 | Verb | Meaning |
-|------|---------|
-| `flow add <text> [--label <label>]` | Create a task (used by the human, and by a runner for the "No" reply branch in §7). The optional `--label` groups the task with a subject for session affinity (HLD-010). |
-| `flow next` | Get the next runnable task assigned to me (or "none"). |
-| `flow context <id>` | Read the task's baton (declared context). |
+|---|---|
+| `flow add <text> [--label <label>]` | Create a task. `--label` groups it for affinity (HLD-010). |
+| `flow next` | Claim the next runnable task for this session (or "none"). |
+| `flow context <id>` | Read the task's baton (declared context) and inbound references. |
 | `flow note <id> <text>` | Append progress/finding to the baton. |
-| `flow done <id> <outcome>` | Complete with a stated outcome. |
-| `flow escalate <id> <question>` | Park the task waiting on a human. |
-| `flow split <id> "child A" "child B" …` | Spawn children; park the parent until they finish. |
 | `flow decide <id> <decision>` | Record a decision. |
+| `flow done <id> <outcome>` | Complete with a **mandatory** outcome (the task's account; a long one renders as separate markdown but is still an outcome, not a report — HLD-016). |
+| `flow escalate <id> <question>` | Park the task on a human. A task may hold multiple open escalations, each tracked by its own reference (HLD-005). |
+| `flow split <id> "child A" "child B" …` | Spawn children; park the parent. |
+| `flow feedback <id> <text>` | Steer (HLD-007): drive an agent-judged report update, or inject a referenced task. |
 
-Runners use **only** these. No direct database access, ever.
-
-Three verbs are **human/ops-facing**, not part of the runner loop:
+Human/ops-facing (not part of the runner loop, but still carry a recognized session):
 
 | Verb | Meaning |
-|------|---------|
-| `flow reply <id> <text>` | Answer a blocked task, or signal premature completion on a `done` task (§7). Records the reply on the baton; if blocked, resolves the open escalation and wakes the task; if `done`, reopens it to `pending` (late reply). The runner decides on pickup whether to continue this task or create a new related task. |
-| `flow reopen <id>` | Move a `done` task back to `pending`. |
-| `flow list` | List all tasks with their current state. Read-only observation verb; never changes state. |
+|---|---|
+| `flow answer <id> <text>` | Answer an open escalation on a task, addressed by its reference (implicit when exactly one is open); resolves it and wakes the task once no dependencies remain (HLD-005/007). Rejected when no matching escalation is open. |
+| `flow reopen <id>` | Resurrect a `done` task to `pending` (rare; the norm is supersede — HLD-004). Runner- or human-**callable**, but not a routine **loop step** (see the permission-vs-loop note below). |
+| `flow reclaim <id>` | Immediately reclaim a non-responsive session's task (HLD-014) — the "act" in see-and-act, no waiting out the lease. |
+| `flow list` | List tasks/sessions with state and liveness. Read-only. |
 
-## HLD-010 - Work routing (soft affinity by label and named sessions)
+**Permission vs loop membership.** `core.md` defines the *routine loop* — claim → work →
+hand off → done. A verb being absent from that loop (the "human/ops" set: `answer`,
+`reopen`, `reclaim`, `list`) means it is *not a routine step*, **not** that a runner may not
+call it. A runner may `reopen` or `reclaim` when its judgment calls for it (HLD-015); these
+simply aren't part of the steady-state cycle. (`test_human_ops_verbs_absent_from_runner_loop`
+therefore checks *loop membership* — absence from `core.md` — not callability.)
+
+Runners use **only** these task/steering verbs — no direct database access, ever. The
+**report verb surface (HLD-016)** is a deliberate, separate extension to this contract that
+is *not yet enumerated*; until it is, this set is the task/steering layer and
+`test_cli_exposes_only_contract_verbs` covers exactly that layer.
+
+## HLD-010 - Work routing (mandatory named sessions, soft label affinity)
 
 HLD-ID: HLD-010
-HLD-DESC: HLD-010 is in-scope architecture at high risk, touching processing; "work routing by soft label affinity and named sessions".
+HLD-DESC: HLD-010 is in-scope architecture at high risk, touching processing; "work routing by mandatory named sessions and soft label affinity".
 HLD-ROLE: architecture
 HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,test_flow.py
-HLD-VERIFY: `flow next` without a session returns the oldest runnable task exactly as before; a session prefers its bound label, binds to the label of the first labeled task it claims, and falls back to any runnable task only when none of its label remain; a runner sees "none" only when no runnable work exists at all
+HLD-VERIFY: every claim names a session and a missing name is an error (no anonymous path); a session prefers its bound label, binds to the label of the first labeled task it claims, and falls back to any runnable task only when none of its label remain; a session sees none only when no runnable work exists; the declared name is durable — reclaim takes the task, not the identity
+HLD-RATIONALE: the name is the bracelet — declaring a true name is the whole enrollment, there is no separate registration step; first contact creates the session row implicitly and the system trusts the name on sight (it cannot and need not verify truthfulness); removing the v1 anonymous path closes the unfenced legacy hole at its root
 
-Routing keeps a session's context warm by feeding it work on one **subject** rather than
-thrashing it across unrelated subjects every pickup. It hangs off one existing field
-(the task's `label`) and one filter on `flow next` — the loop, the four states, and the
-wake rule are untouched.
+A session is **mandatory** and names itself: `flow next --session <name>` means *"I am
+`<name>`; give me my next."* The name **is** the bracelet — declaring it is the enrollment;
+no separate registration verb, first contact creates the session row implicitly, the system
+trusts the name on sight and rejects only its absence.
 
-- **Label.** A task carries an optional `label` (its subject — a component, directory, or
-  topic). This reuses the existing task column; no new task field is added.
-- **Named sessions.** A runner identifies itself: `flow next --session <name>`. A small
-  `sessions` table records each session's **bound label**; `assignee` records which
-  session currently holds a task.
-- **Soft affinity.** A session starts unbound and takes the oldest runnable task of any
-  subject; if that task is labeled, the session **binds** to it. Once bound it prefers its
-  label, but if none of its label is runnable it **falls back** to any runnable task
-  (binding unchanged) rather than idle — the session is the scarce resource and must keep
-  working. A runner gets "none" only when the queue holds no runnable work at all.
-- **Backward compatible.** `flow next` with no `--session` behaves exactly as today.
+- **Label** — a task's optional subject (component/feature/topic); reuses the existing
+  column. Also the natural scope a **report** is about (HLD-016).
+- **Soft affinity** — a session starts unbound, takes the oldest runnable task of any
+  subject, binds to it if labeled; bound, it prefers its label but falls back rather than
+  idle. "none" only when no runnable work exists. NULL-labeled children (split of an
+  unlabeled parent) enter the general pool and don't trigger binding.
+- **Durable identity** — a silent session's *task* is reclaimed (HLD-014); its session row
+  persists (keeps the bound label). It returns, names itself, gets fresh work.
 
-> **Future (not built):** routing by capability and *must-halt* tasks (wait on a specific
-> task instead of parking) are further fields on the same shape; add when needed.
-
-## HLD-011 - Out of scope (deliberately stripped)
+## HLD-011 - Scope boundary
 
 HLD-ID: HLD-011
 HLD-ROLE: governance
 HLD-STATUS: active
 HLD-RISK: LOW
-HLD-SPECS: TBD
-HLD-RESOURCES: TBD
-HLD-DESC: HLD-011 is out-of-scope governance at low risk, touching none; "unix-socket task delivery, connection pools, health daemons, failover, web UI / HTTP API, environment staging, migration tooling — deliberately stripped".
+HLD-SPECS: provisional (none assigned yet; assign when the first spec citing this section is drafted — revisit at the next SDD-gate assessment)
+HLD-RESOURCES: README.md
+HLD-DESC: HLD-011 is in-scope governance at low risk, touching none; "the boundary rule: no interface or infrastructure may bypass or weaken baton/context integrity; the old exclusion list is retired — absences are current implementation status, not product limits".
 
-The prior design accreted operational machinery that is **not** part of this system:
-Unix-socket task delivery, connection pools, health-monitoring daemons, automatic
-failover, the web UI / HTTP API, environment staging, and migration tooling. They are
-excluded on purpose to keep the contract small and the implementation a few files.
-Re-introduce only with a documented reason.
+There is **no exclusion list**. The old list (no web UI, HTTP API, Unix sockets,
+health-monitoring daemons, connection pools, automatic failover, environment staging,
+migration tooling) was slicing residue from stripping the v1 design, not intentional
+product limits (owner decision 2026-07-03, rejecting old DECLARED-010). Those capabilities
+are **allowed candidates** (HLD-017); their absence today is **current implementation
+status**, not exclusion.
+
+**The boundary rule that replaces it:** interfaces and infrastructure may expand when they
+support the core baton/context-management goal, but **no interface or infrastructure may
+bypass or weaken**: baton/context integrity, durable task state, stable IDs, explicit
+references, escalation traceability, session/log links, copy-pasteable context, or human
+authority over decisions.
+
+Anything that crosses that rule stays out regardless of how useful it looks; anything
+inside it is a candidate, adopted deliberately through an HLD amendment (HLD-017), never by
+accretion. Reports (HLD-016) and see-and-act recovery (HLD-014) are already in-scope design
+surface — CLI + markdown, on-demand, with no background process in the current design.
 
 ## HLD-012 - Technology
 
 HLD-ID: HLD-012
-HLD-DESC: HLD-012 is in-scope operations at low risk, touching none; "technology choices: Python, SQLite, files".
+HLD-DESC: HLD-012 is in-scope operations at low risk, touching none; "technology choices: Python, SQLite (current store), files".
 HLD-ROLE: operations
 HLD-STATUS: active
 HLD-RISK: LOW
-HLD-SPECS: TBD
+HLD-SPECS: provisional (none assigned yet; assign when the first spec citing this section is drafted — revisit at the next SDD-gate assessment)
 HLD-RESOURCES: flow.py
 
 - **Language**: Python 3.10+
-- **State**: SQLite (WAL mode), single source of truth.
-- **Projection**: Markdown, one-way out.
+- **State**: SQLite (WAL mode) — the current durable store behind the single-source-of-truth
+  principle (HLD-003). An implementation detail, replaceable without product change.
+- **Projection**: Markdown, derived from the store; product surface (HLD-003).
 - **Loop**: `core.md`, agnostic, over the CLI + text interfaces.
-- **Runner (now)**: Claude. **Later (pluggable)**: Devin, Codex.
+- **Runners**: AI session runners — Claude, Devin, Codex — via the CLI (the confirmed
+  current set; pluggable by design, HLD-003).
 
 ## HLD-013 - Concurrency and durability
 
@@ -325,15 +377,15 @@ HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,test_flow.py
-HLD-VERIFY: concurrent `flow next` calls claim each task at most once (the claim takes the write lock before it reads the queue); every CLI operation is one all-or-nothing transaction (a crash leaves no partial state); the connection runs WAL + busy_timeout + synchronous=NORMAL
+HLD-VERIFY: concurrent flow next calls claim each task at most once (the claim takes the write lock before it reads the queue); each claim records claimed by session on the baton within the same transaction; every CLI operation is one all-or-nothing transaction (a crash leaves no partial state); the connection runs WAL + busy_timeout + synchronous=NORMAL
 
 Named sessions make concurrency real, so the base layer must be strong before routing
 rides on it.
 
 - **Atomic claim.** `flow next` takes the write lock *before* it reads the queue
-  (`BEGIN IMMEDIATE`), selects the runnable task, and claims it in the same transaction.
-  Two runners can never both hold one task: the second sees it already `in_progress` and
-  moves on.
+  (`BEGIN IMMEDIATE`), selects the runnable task, records `claimed by <session>` on the
+  baton, and claims it in the same transaction. Two runners can never both hold one task:
+  the second sees it already `in_progress` and moves on.
 - **One transaction per operation.** Each command commits all of its effects or none. A
   crash mid-operation cannot leave split state (e.g. a child marked `done` while its parent
   stays `blocked` forever).
@@ -343,34 +395,191 @@ rides on it.
 The markdown projection is written *after* the transaction commits; it is a re-derivable
 view, never part of a transaction.
 
-## HLD-014 - Orphaned-work recovery (lease, reclaim, fence)
+## HLD-014 - Recovery: lease, see-and-act reclaim, fence, flaky-mark
 
 HLD-ID: HLD-014
-HLD-DESC: HLD-014 is in-scope architecture at high risk, touching concurrency, data and processing; "orphaned-work recovery: lease, reclaim, fence".
+HLD-DESC: HLD-014 is in-scope architecture at high risk, touching concurrency, data and processing; "recovery: lease, see-and-act reclaim, ownership fence, permanent flaky-mark".
 HLD-ROLE: architecture
 HLD-STATUS: active
 HLD-RISK: HIGH
 HLD-SPECS: constitution
 HLD-RESOURCES: flow.py,test_flow.py
-HLD-VERIFY: a task whose session has been silent past the lease TTL is reclaimed to pending — in_progress only, never blocked — recording the reason and incrementing reclaim_count; after a reclaim threshold it is escalated instead of requeued; done/escalate/split by a session that no longer holds a session-owned task are rejected; note/decide/reply stay multi-writer; reclaim runs under the claim's BEGIN IMMEDIATE
+HLD-VERIFY: a non-responsive session's task is reclaimable two ways — an explicit flow reclaim acts immediately on an observed non-response, and a lazy lease-TTL backstop reclaims silent tasks automatically; reclaim returns the task to pending (in_progress only, never blocked), clears assignee, records the reason, and saturates reclaim_count at RECLAIM_MAX as a permanent flaky-mark — at or past the ceiling every further orphaning escalates immediately, and each such escalation is scoped to the specific orphaning event it reports (its own stable reference, reason, and reply routing) and coexists with any other open escalations on the task; ownership-implying transitions by a session that is not the current owner are rejected, while an unowned task stays operable by any named session; note/decide stay multi-writer and feedback (like add) is an unfenced creation verb; reclaim runs under the claim's BEGIN IMMEDIATE
+HLD-RATIONALE: every caller is now a named session (HLD-010), so the fence drops only the v1 caller-anonymous bypass; it still distinguishes a task held by another named session (rejected — no theft) from an unowned task (allowed — cleanup, HLD-015). v1's only fast recovery was the anonymous bypass, removed here — so recovery becomes see-and-act: liveness is visible (flow list shows staleness) and flow reclaim acts at once, with the lease as the automatic floor; permanent flaky-mark because a since-fixed task costs one bounded human glance while a reset risks repeating wasted silent-reclaim cycles — a clean slate is a fresh task; scoping each orphaning escalation to its own event (rather than one global task-level slot) keeps traceability intact under concurrent escalations (HLD-005)
 
-A session can claim a task and then vanish, leaving it stuck `in_progress` forever.
-Recovery is a **liveness** concern, separate from the correctness HLD-013 guarantees.
+A session can claim a task and go non-responsive — hung, or vanished. Recovery is a
+**liveness** concern, separate from the correctness HLD-013 guarantees. **See and act:**
+don't wait blindly.
 
-- **Lease.** A claim's `updated_at` is its lease stamp; any progress (`note`, `decide`)
-  refreshes it. A task `in_progress` past `LEASE_TTL` (a generous default of **1 hour**)
-  is *orphaned*. There is no heartbeat obligation — silence alone, not a missing ping,
-  defines an orphan.
-- **Reclaim — lazy, no daemon.** Inside `flow next` (before selecting), an orphaned task
-  returns to `pending`, **clears its `assignee`** (the vanished session no longer holds
-  it), appends `reclaimed: session X silent since T`, and bumps a new `reclaim_count`.
-  Only `in_progress` is reclaimed; `blocked` is parked by design. Reclaim happens under
-  the same `BEGIN IMMEDIATE` as the claim, so it cannot race.
-- **Escalate-on-repeat.** After `RECLAIM_MAX` reclaims (default **3**), the task escalates
-  instead of requeuing — reusing the escalation primitive (HLD-006 repeated failure).
-- **Fence — ownership-implying transitions only.** When a task is held by a named session,
-  `done` / `escalate` / `split` must carry that session or are rejected (`you no longer
-  hold task N`). Tasks claimed with no session (the legacy path, HLD-010) stay unfenced, so
-  `flow next` without a session behaves exactly as today.
-- **Blackboard stays multi-writer.** `note` / `decide` / `reply` are never fenced; they get
-  attribution, per the baton model (HLD-008). Fencing them would break the blackboard.
+- **See.** `flow list` surfaces each session's staleness (last-seen, current task), so a
+  non-responsive session is *visible*.
+- **Act now.** `flow reclaim <id>` immediately returns an observed-non-responsive session's
+  task — no waiting out the lease.
+- **Automatic floor.** A task `in_progress` past `LEASE_TTL` (default 1 hour) is reclaimed
+  lazily inside `flow next` — the backstop for a session nobody noticed. `note`/`decide`
+  refresh the lease stamp; silence alone defines a silent task.
+- **Reclaim** returns the task to `pending`, **clears assignee**, records
+  `reclaimed: session X …`, and bumps `reclaim_count`. Only `in_progress` is reclaimed;
+  `blocked` is parked by design. Runs under the claim's `BEGIN IMMEDIATE`.
+- **Permanent flaky-mark.** `reclaim_count` saturates at `RECLAIM_MAX` (default 3); at/past
+  the ceiling, any further orphaning **escalates immediately** instead of requeuing. Each
+  such escalation is **scoped to the specific orphaning event it reports** — it carries its
+  own stable ID/reference, reason, owner/reply routing, and status, and coexists with any
+  other open escalations on the task (HLD-005); flaky/blocked/orphaning semantics always
+  attach to the specific escalation, dependency, or task-state issue they refer to, never
+  to one global task-level slot. An `answer` resolves the escalation it references; the
+  mark never resets — a fresh start is a **new task** (count 0), not a reset.
+- **Fence.** `done`/`escalate`/`split` are rejected when the task is held by a *different*
+  named session. An unowned task stays operable by any named session (the cleanup pattern,
+  HLD-015). There is no anonymous caller anymore.
+- **Blackboard multi-writer.** `note`/`decide` are never fenced (attributed, per HLD-008).
+  `feedback` is a creation/steering verb (like `add`) — identity-gated, not an ownership
+  transition — so it too is unfenced.
+
+## HLD-015 - The autonomy contract: enforce invariants, delegate judgment
+
+HLD-ID: HLD-015
+HLD-DESC: HLD-015 is in-scope governance at high risk, touching processing; "the contract enforces invariants and delegates judgment to the agent".
+HLD-ROLE: governance
+HLD-STATUS: active
+HLD-RISK: HIGH
+HLD-SPECS: constitution
+HLD-RESOURCES: flow.py,core.md,test_flow.py
+HLD-VERIFY: every raise FlowError in flow.py is tagged with the one invariant it protects, drawn from the closed set dependency, identity, ownership, lifecycle, existence; a raise that cannot be honestly tagged from that set is flagged for review as candidate overreach; the agent-discretion behaviors (done/escalate/split from any non-blocked state, answer-then-runner-decides, feedback-magnitude-is-judged, waking-as-a-decision) are intentional, not defects
+HLD-RATIONALE: an unwritten principle the whole system leans on is itself a stated-not-enforced gap; the tagging guard makes the enforcement boundary auditable without overclaiming — it is a review-forcing tripwire (it surfaces guards that protect no invariant), not a mechanical proof that no overreach exists
+
+The engine constrains only what **must** be true — the closed invariant set:
+
+- **dependency** — a task can't be `done` with unmet dependencies (open escalations or
+  unfinished children); a split must have ≥1 child (no stranded parent).
+- **identity** — every action is taken by a named session; "no one" can't hold or move work (HLD-009/010).
+- **ownership** — a task held by a named session can't be transitioned by another (HLD-014).
+- **lifecycle** — the state machine is well-formed: four task states, legal transitions
+  only (`done` can't be escalated/split; `reopen` only from `done`), escalations are
+  tracked as distinct referenced dependencies opened and resolved individually (HLD-005),
+  and **a `deprecated`/`obsolete` report is immutable** (HLD-016).
+- **existence** — operations target a real task/report.
+
+**Everything above that floor is the agent's call:** when to label, how big a response a
+piece of feedback deserves (update / section / supersede / sweep — HLD-016), whether a
+woken task is still worth doing, when to split, whether to mark stale work done. The
+mechanism never pre-decides a judgment the runner should make.
+
+**The audit test — honest about what it is.** Every `raise FlowError` in `flow.py` carries
+a tag — `# INVARIANT: dependency|identity|ownership|lifecycle|existence` — naming the one
+invariant it protects; a guard that can't be honestly tagged from that closed set is
+**flagged for review as candidate overreach**. This is a *tripwire that forces
+justification*, not a proof that no overreach exists — claiming the latter would itself be
+the stated-not-enforced trap inverted. A judgment-shaped guard ("must have written N
+notes") fits none of the five and trips the wire. *(The four-state set is additionally
+enforced declaratively by the SQLite `CHECK(state IN …)` constraint — a `lifecycle`
+invariant guarded in the schema rather than via `raise FlowError`, so it sits outside the
+tagging scope by nature, not by omission.)*
+
+## HLD-016 - The output layer: outcome and report
+
+HLD-ID: HLD-016
+HLD-DESC: HLD-016 is in-scope architecture at high risk, touching data and processing; "the output layer — every task has an outcome (bound, any size); a report is a distinct transcendent deliverable".
+HLD-ROLE: architecture
+HLD-STATUS: active
+HLD-RISK: HIGH
+HLD-SPECS: constitution
+HLD-RESOURCES: flow.py,test_flow.py
+HLD-VERIFY: every task states a mandatory outcome at done — the task's bound account (what/how/why), any size, where a long outcome only changes UX (rendered as separate markdown) and is still an outcome, never a report; a report is a distinct transcendent deliverable scoped to a subject bigger than one task, produced deliberately by a report-purposed task; tasks and reports are many-to-many and a report is updated under agent judgment (in-place, add-section, supersede, or sweep); a report's lifecycle (active to deprecated, with fate superseded or obsolete) is independent of any task's lifecycle; a deprecated or obsolete report is immutable and a reference to it resolves to its live successor; every report update is attributed
+HLD-RATIONALE: outcome vs report is a distinction of KIND (the task's bound account vs a transcendent subject deliverable), not size — calling a long outcome a report was a category error; the report is the system's valuable output (HLD-001), distinct from both the baton (context) and the outcome (per-task account); it is bigger than a task because value accrues across many tasks on a subject; updates span a spectrum because forcing supersession for a typo is as wrong as appending forever — the agent judges magnitude (HLD-015); deprecated-immutable + deprecation-aware references keep outputs from silently going stale
+
+The output stack has three levels — context feeds results feed deliverables:
+
+| Level | Scope | Nature | Update mode |
+|---|---|---|---|
+| **Baton** | per task | context — the journey (HLD-008) | append-log |
+| **Outcome** | per task (bound) | result — the task's account (what/how/why), **mandatory**; short → inline UX, long → separate-markdown UX (**still an outcome**) | stated at `done` |
+| **Report** | per **subject** (bigger than a task), **transcendent** | the **deliverable** — produced deliberately, drawing on the subject's outcomes (not a big outcome) | agent-judged spectrum |
+
+- **Every task has an outcome** — its own account of *what it did, how, and why*. `done`
+  requires it. The outcome is **bound to its task** (the task's record; it dies with the task).
+- **Outcome size is a UX detail, not a kind change.** A **short** outcome renders inline; a
+  **long** one renders as its own **separate markdown** (different UX) — but it is *still an
+  outcome*, bound to its task. A long outcome is **not** a report. (The separate-markdown
+  view is the projection of HLD-003 — derived product surface, no new interface implied;
+  the HLD-011 boundary rule governs any richer view.)
+- **A report is a distinct kind** — the transcendent, subject-scoped **deliverable**,
+  produced *deliberately* by a task whose **purpose** is to generate/synthesize one. Such a
+  task has **both** its outcome (its account of generating) *and* the report (the deliverable).
+  A report *draws on* the outcomes of the subject's tasks but is **not** any single outcome
+  that got big. It transcends every task: its own lifecycle, fed and updated across the subject.
+- **Tasks ↔ reports are many-to-many.** Commonly one task → one report; a report can be fed
+  by many tasks (subject-scoped); one task can sweep-update many reports (maintenance).
+- **Feedback on a report → the agent judges the magnitude** (HLD-015): **tiny** → update in
+  place; **medium** → research and add a **section**; **large** → a new task + new report
+  that **supersedes**; **broad** → one task that sweeps many reports. Reports are *not*
+  ownership-fenced like tasks — they are collaborative deliverables maintained under agent
+  judgment; the human steers via `feedback`.
+- **Report lifecycle:** `active` → (interim appends are fine) → declared **`deprecated`**,
+  with fate **`superseded`** (regenerated; points to its successor) or **`obsolete`**
+  (no successor; retained for audit, not deleted).
+- **Two enforced invariants** (HLD-015 `lifecycle`): a `deprecated`/`obsolete` report is
+  **immutable** (appends/feedback redirect to the successor); a report's lifecycle is
+  **independent** of any task's (a report outlives its tasks; it is superseded without
+  reopening a task — no retroactive cascade).
+- **References are deprecation-aware** and **updates are attributed** — a reference resolves
+  to the live successor, never silently stale; every contribution records who and when.
+
+Reports are DB-owned and markdown-projected, exactly like the baton (HLD-003) — the output
+is truth in the durable store, readable as a derived markdown view (product surface).
+
+*(The concrete report verb surface — create/update/section/supersede/abandon — and ref
+storage are **a deferred, separate extension to HLD-009's verb contract**, pinned separately. Until then HLD-009 enumerates the task/steering layer only; reports are created via a
+long `done` outcome and steered via `feedback`, and the remaining ops are named here but not
+yet given CLI verbs. The operations and invariants above are the contract; the surface is
+not.)*
+
+## HLD-017 - Requirements and feature candidates
+
+HLD-ID: HLD-017
+HLD-DESC: HLD-017 is in-scope governance at low risk, touching none; "committed design surface vs allowed candidate capabilities vs current implementation status, governed by the HLD-011 boundary rule".
+HLD-ROLE: governance
+HLD-STATUS: active
+HLD-RISK: LOW
+HLD-SPECS: provisional (none assigned yet; assign when the first spec citing this section is drafted — revisit at the next SDD-gate assessment)
+HLD-RESOURCES: README.md
+
+This section separates three things that must not be confused: what the product **is**
+(committed design surface), what it **may become** (allowed candidates), and what it
+**currently implements** (a subset of the committed design). It exists to prevent two
+symmetric errors: treating candidate capabilities as excluded forever, and treating every
+candidate as already committed or implemented.
+
+**Committed design surface** — required by this HLD:
+
+- Durable-baton task management across AI handoffs (HLD-001/008).
+- Fork-join workflow: escalation, splitting, dependency gates (HLD-004/005).
+- Multiple concurrent escalations per task, each with a stable ID/reference, owner/reply
+  routing, status, relation to task/baton context, and clear wake/re-claim behavior
+  (HLD-005/007/014).
+- AI session runners (Claude, Devin, Codex) and the human operator, via the CLI
+  (HLD-009/010/012).
+- Markdown/report/context projections as product surface — agent integration/handoff,
+  work-in-progress context state, user-facing context and reporting (HLD-003/016).
+- Task/report references and attributed, traceable updates (HLD-007/016).
+
+**Allowed candidate capabilities** — named so they are neither excluded forever nor
+mistaken for committed or implemented surface. Each is a **candidate only**: adopting one
+is a deliberate future design decision under the HLD-011 boundary rule, and nothing here
+schedules, commits, or implements it:
+
+- Web UI; HTTP API; Unix sockets; daemons; worker pools.
+- Environment staging; migration tooling.
+- Richer UI infrastructure; React-style reply flows.
+- Session-log links; richer task/report/log reference surfaces.
+- Robust markdown/context views beyond the current projections.
+
+**Current implementation status** — the runtime (`flow.py`) currently implements the v1
+surface documented in `README.md` usage: a single `reply` verb (not yet the
+`answer`/`feedback` split of HLD-007), optional session naming (not yet the mandatory named
+sessions of HLD-009/010), lease-based reclaim with escalate-on-repeat (not yet the
+see-and-act `reclaim` verb of HLD-014), one escalation slot per task (not yet the
+concurrent escalations of HLD-005), and no report layer yet (HLD-016). Where this HLD
+states stronger design, the design is authoritative and the gap is implementation status —
+closed through the normal spec/implementation flow, not by editing the design back down.
+No candidate capability above is implemented.

@@ -20,11 +20,16 @@ and you steer by replying to it.
 
 The design is the single source of truth: see **[HLD.md](HLD.md)**.
 
-## What it is not
+## Scope boundary
 
-Deliberately excluded (HLD-011): Unix-socket task delivery, web UI / HTTP API, health
-daemons, connection pools, environment staging, and migration tooling. These were
-stripped to keep the loop lean. Adding them requires an HLD amendment.
+There is no exclusion list. Capabilities like a web UI, HTTP API, Unix sockets, daemons,
+worker pools, environment staging, or migration tooling are **allowed candidates**, not
+product limits (HLD-017) — their absence today is current implementation status, not
+intent. One boundary rule governs any expansion (HLD-011): no interface or infrastructure
+may bypass or weaken baton/context integrity, durable task state, stable IDs, explicit
+references, escalation traceability, session/log links, copy-pasteable context, or human
+authority over decisions. Candidates are adopted deliberately via an HLD amendment, never
+by accretion.
 
 ## Layout
 
@@ -34,6 +39,10 @@ stripped to keep the loop lean. Adding them requires an HLD amendment.
 - **test_flow.py** — lifecycle, fork-join, escalation, and reopen tests.
 
 ## Usage
+
+The commands below reflect the **currently implemented** surface. `HLD.md` states the
+target design, which is ahead of the runtime in places (concurrent escalations,
+`answer`/`feedback`, mandatory named sessions, reports); HLD-017 records that gap.
 
 ```bash
 flow() { python3 flow.py "$@"; }   # or: chmod +x flow.py && ./flow.py …
