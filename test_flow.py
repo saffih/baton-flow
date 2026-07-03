@@ -225,9 +225,14 @@ def test_cli_roundtrip(tmp_path, capsys):
 
 
 def test_context_survives_markdown_deletion(conn, tmp_path):
-    """HLD-003 VERIFY: SQLite is the only source of truth; markdown is a one-way
-    projection, never an input; the loop depends only on the CLI + text and names
-    no specific AI"""
+    """HLD-003 VERIFY: one durable state store is the single source of truth
+    (currently SQLite — an implementation detail, replaceable without product
+    change); markdown projections are derived, re-derivable product surface with
+    three promised roles (agent integration/handoff, context state for work in
+    progress, user-facing context and reporting); an agent may read a projection
+    directly when it preserves stable IDs, task references, baton/context state,
+    reply context, and links to relevant reports/logs; projections are never a
+    write path; the loop depends only on the CLI + text and names no specific AI"""
     # Deleting the projection must not lose data — context() reads the DB.
     tid = flow.add(conn, "task")
     flow.note(conn, tid, "important finding")
@@ -335,10 +340,11 @@ def test_high_risk_verify_texts_present_in_tests():
 
 
 def test_connection_hardening(tmp_path):  # HLD-013
-    """HLD-013 VERIFY: concurrent `flow next` calls claim each task at most once (the
-    claim takes the write lock before it reads the queue); every CLI operation is one
-    all-or-nothing transaction (a crash leaves no partial state); the connection runs
-    WAL + busy_timeout + synchronous=NORMAL"""
+    """HLD-013 VERIFY: concurrent flow next calls claim each task at most once (the
+    claim takes the write lock before it reads the queue); each claim records
+    claimed by session on the baton within the same transaction; every CLI
+    operation is one all-or-nothing transaction (a crash leaves no partial state);
+    the connection runs WAL + busy_timeout + synchronous=NORMAL"""
     c = flow.connect(tmp_path / "h.db")
     assert c.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
     assert c.execute("PRAGMA busy_timeout").fetchone()[0] >= 1000
@@ -376,6 +382,15 @@ def test_concurrent_next_claims_each_task_once(tmp_path):  # HLD-013
 
     assert len(claimed) == 30                    # none dropped
     assert sorted(claimed) == sorted(set(claimed))  # none claimed twice
+
+
+def test_claim_recorded_on_baton(conn):  # HLD-013
+    # each claim records `claimed by session <name>` on the baton, written inside
+    # the claim's own transaction (visible immediately via context()).
+    tid = flow.add(conn, "task")
+    flow.next_task(conn, assignee="alice")
+    _, entries = flow.context(conn, tid)
+    assert any(e["kind"] == "system" and "claimed by session alice" in e["text"] for e in entries)
 
 
 def test_done_wakes_parent_atomically(conn):  # HLD-013
@@ -416,15 +431,15 @@ def test_session_falls_back_when_label_dry(conn):  # HLD-010
 
 
 def test_hld010_verify_invariant(conn):
-    """`flow next` without a session returns the oldest runnable task exactly as before;
-    a session prefers its bound label, binds to the label of the first labeled task it
-    claims, and falls back to any runnable task only when none of its label remain;
-    a runner sees "none" only when no runnable work exists at all.
+    """HLD-010 VERIFY: every claim names a session and a missing name is an error
+    (no anonymous path); a session prefers its bound label, binds to the label of
+    the first labeled task it claims, and falls back to any runnable task only when
+    none of its label remain; a session sees none only when no runnable work
+    exists; the declared name is durable — reclaim takes the task, not the identity
 
-    HLD-010 VERIFY: `flow next` without a session returns the oldest runnable task
-    exactly as before; a session prefers its bound label, binds to the label of the first
-    labeled task it claims, and falls back to any runnable task only when none of its
-    label remain; a runner sees "none" only when no runnable work exists at all"""
+    Implementation status (HLD-017): session naming is still optional in the v1
+    runtime — the mandatory-session slice has not landed, so the anonymous path is
+    characterized below as current behavior, not as design intent."""
     # backward compat: no session → oldest runnable task
     oldest = flow.add(conn, "oldest", label="x")
     flow.add(conn, "newer", label="y")
@@ -471,12 +486,22 @@ def test_migration_adds_columns_to_old_db(tmp_path):  # HLD-013 / HLD-014
 
 
 def test_orphaned_task_reclaimed(conn):  # HLD-014
-    """HLD-014 VERIFY: a task whose session has been silent past the lease TTL is
-    reclaimed to pending — in_progress only, never blocked — recording the reason
-    and incrementing reclaim_count; after a reclaim threshold it is escalated instead
-    of requeued; done/escalate/split by a session that no longer holds a session-owned
-    task are rejected; note/decide/reply stay multi-writer; reclaim runs under the
-    claim's BEGIN IMMEDIATE"""
+    """HLD-014 VERIFY: a non-responsive session's task is reclaimable two ways — an
+    explicit flow reclaim acts immediately on an observed non-response, and a lazy
+    lease-TTL backstop reclaims silent tasks automatically; reclaim returns the
+    task to pending (in_progress only, never blocked), clears assignee, records the
+    reason, and saturates reclaim_count at RECLAIM_MAX as a permanent flaky-mark —
+    at or past the ceiling every further orphaning escalates immediately, and each
+    such escalation is scoped to the specific orphaning event it reports (its own
+    stable reference, reason, and reply routing) and coexists with any other open
+    escalations on the task; ownership-implying transitions by a session that is
+    not the current owner are rejected, while an unowned task stays operable by any
+    named session; note/decide stay multi-writer and feedback (like add) is an
+    unfenced creation verb; reclaim runs under the claim's BEGIN IMMEDIATE
+
+    Implementation status (HLD-017): the lazy lease-TTL backstop below is the
+    implemented reclaim path; the explicit see-and-act `flow reclaim` verb and the
+    `feedback` verb are committed design with no runtime surface yet."""
     tid = flow.add(conn, "work")
     flow.next_task(conn, assignee="alice")        # alice claims
     _age(conn, tid, flow.LEASE_TTL + 10)          # alice goes silent
@@ -554,13 +579,32 @@ def test_repeated_reclaim_escalates(conn):  # HLD-014
     assert flow.next_task(conn, assignee="runner2") is None  # escalated, not requeued
     assert state(conn, tid) == "blocked"
 
+    # the flaky-mark is permanent: reclaim_count saturates at RECLAIM_MAX
+    assert flow._task(conn, tid)["reclaim_count"] == flow.RECLAIM_MAX
+
+    # at/past the ceiling every further orphaning escalates immediately, each
+    # orphaning event scoped to its own escalation row (stable id, own status)
+    flow.reply(conn, tid, "human: cleared, try once more")   # resolves the escalation
+    flow.next_task(conn, assignee="runner3")                 # claims again
+    _age(conn, tid, flow.LEASE_TTL + 10)                     # orphans again
+    assert flow.next_task(conn, assignee="runner4") is None  # escalates immediately
+    assert state(conn, tid) == "blocked"
+    assert flow._task(conn, tid)["reclaim_count"] == flow.RECLAIM_MAX  # never resets
+    escs = conn.execute(
+        "SELECT id, answer FROM escalations WHERE task_id=? ORDER BY id", (tid,)
+    ).fetchall()
+    assert len(escs) == 2                     # one per orphaning event
+    assert escs[0]["answer"] is not None      # first event resolved
+    assert escs[1]["answer"] is None          # second event open, own reference
+
 
 def test_cli_done_accepts_assignee_form(tmp_path):  # HLD-014
-    # core.md prescribes `--assignee <me>` on done/escalate/split; the CLI must accept it
-    # (the fence verbs are the point of HLD-014 — they must not error for a compliant runner).
+    # core.md prescribes `--session <me>` on the fence verbs; `--assignee` is the
+    # accepted alias. Both spellings must work — the fence verbs are the point of
+    # HLD-014 and must not error for a compliant runner.
     db = str(tmp_path / "flow.db")
     assert flow.main(["--db", db, "add", "ship"]) == 0
-    assert flow.main(["--db", db, "next", "--assignee", "me"]) == 0
+    assert flow.main(["--db", db, "next", "--session", "me"]) == 0
     assert flow.main(["--db", db, "done", "1", "shipped", "--assignee", "me"]) == 0
 
 
@@ -646,19 +690,27 @@ def test_human_ops_verbs_absent_from_runner_loop():
 
 def test_hld004_verify_invariant(conn):
     """HLD-004 VERIFY: only four states exist; a task cannot be done with unfinished
-    children; done is reopenable via reopen() or a late reply(); blocked wakes to pending
-    only when all dependencies resolve; the done/escalate/split guard is on dependencies
-    (blocked check), not on prior state — agents may operate from any non-blocked state"""
+    children; done is reopenable via reopen() but the norm is to supersede with a new
+    referencing task, not resurrect; a task parked as blocked is unassigned, keeping
+    its label for affinity; blocked wakes to pending only when all dependencies
+    resolve; the done/escalate/split guard is on dependencies, not on prior state —
+    agents may operate from any non-blocked state"""
     # only four states exist
     assert flow.STATES == ("pending", "in_progress", "blocked", "done")
     assert len(flow.STATES) == 4
 
     # a task cannot be done with unfinished children
-    parent = flow.add(conn, "parent")
+    parent = flow.add(conn, "parent", label="aff")
     flow.next_task(conn, assignee="runner")
     flow.split(conn, parent, ["child A", "child B"])
     with pytest.raises(flow.FlowError):
         flow.done(conn, parent, "premature")  # parent is blocked by unfinished children
+
+    # a task parked as blocked is unassigned, keeping its label for affinity
+    parked = flow._task(conn, parent)
+    assert parked["state"] == "blocked"
+    assert parked["assignee"] is None
+    assert parked["label"] == "aff"
 
     # done is reopenable
     single = flow.add(conn, "single task")
@@ -670,23 +722,48 @@ def test_hld004_verify_invariant(conn):
 
 
 def test_hld005_verify_invariant(conn):
-    """HLD-005 VERIFY: escalate and split both park the task as blocked and free the
-    runner; the guard is that the task must not be done (not: must be in_progress);
-    a task is runnable only when it has no unmet dependencies"""
-    # escalate parks the task as blocked and frees the runner
-    task_a = flow.add(conn, "task A")
+    """HLD-005 VERIFY: escalate and split both park the task as blocked, clear its
+    assignee (label kept), and free the runner; the guard is that the task must not
+    be done; a task may hold multiple escalations open concurrently, each a distinct
+    dependency with its own stable ID/reference, owner/reply routing, and status;
+    a task is runnable only when all its dependencies — every open escalation and
+    every unfinished child — are resolved"""
+    # escalate parks the task as blocked, clears its assignee (label kept), frees the runner
+    task_a = flow.add(conn, "task A", label="topic")
     task_b = flow.add(conn, "task B")
     flow.next_task(conn, assignee="runner")  # claims task_a
     flow.escalate(conn, task_a, "need human input")
-    assert state(conn, task_a) == "blocked"
+    parked = flow._task(conn, task_a)
+    assert parked["state"] == "blocked"
+    assert parked["assignee"] is None
+    assert parked["label"] == "topic"
     claimed = flow.next_task(conn, assignee="runner")  # runner is free to claim task_b
     assert claimed is not None and claimed["id"] == task_b
 
+    # a task may hold multiple escalations open concurrently, each a distinct
+    # dependency row with its own stable ID and status (answered_at/answer)
+    flow.escalate(conn, task_a, "second, unrelated question")
+    escs = conn.execute(
+        "SELECT id, question, answer FROM escalations WHERE task_id=? ORDER BY id",
+        (task_a,),
+    ).fetchall()
+    assert len(escs) == 2
+    assert escs[0]["id"] != escs[1]["id"]
+    assert all(e["answer"] is None for e in escs)
+
+    # an answer resolves one escalation; the other keeps the task parked —
+    # runnable only when every dependency is resolved
+    flow.reply(conn, task_a, "answer to the first")
+    assert state(conn, task_a) == "blocked"
+    flow.reply(conn, task_a, "answer to the second")
+    assert state(conn, task_a) == "pending"
+
     # split parks the parent as blocked and frees the runner; children are runnable
     parent = flow.add(conn, "parent")
-    flow.next_task(conn, assignee="runner2")  # claims parent
+    flow.next_task(conn, assignee="runner2")  # claims task_a again (oldest pending)
     child_ids = flow.split(conn, parent, ["child X", "child Y"])
     assert state(conn, parent) == "blocked"
+    assert flow._task(conn, parent)["assignee"] is None
     # children have no unmet dependencies — they are runnable
     c1 = flow.next_task(conn, assignee="runner3")
     assert c1 is not None and c1["id"] in child_ids
@@ -709,11 +786,10 @@ def test_escalation_triggers_in_core_md():
 
 
 def test_hld007_verify_invariant(conn):
-    """HLD-007 VERIFY: a human reply is appended to the baton and resolves the open
-    escalation when the task is blocked; a reply to a done task reopens it to pending
-    (late reply — signals premature completion); when the task wakes, the runner either
-    continues this task or creates a new related task from the reply without silently
-    merging scopes"""
+    """Characterizes the implemented v1 reply surface (HLD-017 implementation
+    status: a single `reply` verb, not yet the answer/feedback split of HLD-007):
+    a human reply is appended to the baton, resolves an open escalation when the
+    task is blocked, and wakes the task once no dependencies remain."""
     tid = flow.add(conn, "question task")
     flow.next_task(conn, assignee="runner")
     flow.escalate(conn, tid, "which approach?")
@@ -725,10 +801,12 @@ def test_hld007_verify_invariant(conn):
 
 
 def test_hld007_late_reply_reopens_done_task(conn):
-    """HLD-007 VERIFY: a reply to a done task reopens it to pending (late reply —
-    signals premature completion).
-
-    HLD-004 VERIFY: done is reopenable via reopen() or a late reply()."""
+    """Characterizes the implemented v1 late-reply behavior: a reply to a done task
+    reopens it to pending (signals premature completion). Under the hardened
+    HLD-007 the answer/feedback split replaces this (an answer with no matching
+    open escalation is rejected; feedback produces new work or a successor) —
+    that slice has not landed (HLD-017 implementation status), so the v1 behavior
+    is pinned here until it does."""
     tid = flow.add(conn, "task")
     flow.next_task(conn, assignee="runner")
     flow.done(conn, tid, "seemed done")
@@ -741,8 +819,11 @@ def test_hld007_late_reply_reopens_done_task(conn):
 
 
 def test_hld007_binary_reply_branches(conn):
-    """HLD-007 VERIFY: when the task wakes, the runner either continues this task or
-    creates a new related task from the reply without silently merging scopes.
+    """Characterizes the v1 reply routing (HLD-017 implementation status): with a
+    single reply verb, the runner judges on wake whether the reply is about this
+    task or new scope — never silently merging scopes. (The hardened HLD-007 moves
+    this routing to the human's channel choice: answer resolves the specific
+    escalation it references, feedback creates a referenced task.)
 
     Branch A — reply is about this task: task wakes to pending, reply on baton, runner
     continues this task.
@@ -793,9 +874,13 @@ def test_late_reply_on_done_child_parent_stays_done(conn):
 
 
 def test_hld008_verify_invariant(conn, tmp_path):
-    """HLD-008 VERIFY: the baton lives in the database and is read via the CLI;
-    markdown batons are a one-way projection; declared context is the only context
-    the contract touches."""
+    """HLD-008 VERIFY: the baton lives in the database and its canonical read path
+    is the CLI; markdown batons are a derived projection and product surface
+    (HLD-003) that an agent may read directly when it preserves stable IDs,
+    references, baton/context state, reply context, and report/log links; the baton
+    carries a task's declared context (the means by which a handoff is lossless)
+    and is distinct from the report, which is the output (HLD-016); declared
+    context is the only context the contract touches"""
     tid = flow.add(conn, "baton task")
     flow.note(conn, tid, "critical finding")
     # delete the markdown projection — declared context must still be accessible via context()
@@ -808,11 +893,18 @@ def test_hld008_verify_invariant(conn, tmp_path):
 
 
 def test_hld009_verify_invariant():
-    """HLD-009 VERIFY: runners use only the listed verbs; no direct database access;
-    reply, reopen, and list are human/ops-facing and not part of the runner loop.
+    """HLD-009 VERIFY: every CLI call carries a recognized session, enforced at the
+    CLI entry — a missing session is an error, there is no anonymous path, reads
+    included; runners use only the listed verbs with no direct database access;
+    answer, reopen, list, and reclaim are human/ops-facing; feedback steers and
+    add/feedback create work
 
-    This test characterizes that core.md — the runner loop definition — structurally
-    satisfies the HLD-009 VERIFY invariant.
+    This test characterizes that core.md — the runner loop definition — keeps the
+    human/ops verbs out of the loop and teaches no direct database access.
+    Mandatory sessions and the answer/feedback/reclaim verbs are committed design
+    the runtime does not implement yet (HLD-017 implementation status: optional
+    session naming, single reply verb) — enforced here only at the loop-membership
+    level until that slice lands.
     """
     core = (Path(flow.__file__).parent / "core.md").read_text()
 
@@ -824,7 +916,7 @@ def test_hld009_verify_invariant():
     import re
     flow_verbs_in_core = set(re.findall(r'flow\s+(\w+)', core))
     runner_verbs = {"add", "next", "context", "note", "done", "escalate", "split", "decide"}
-    human_ops_verbs = {"reply", "reopen", "list"}
+    human_ops_verbs = {"reply", "reopen", "list", "answer", "reclaim"}
 
     assert not (flow_verbs_in_core & human_ops_verbs), (
         f"human/ops verbs found as CLI commands in core.md: "
@@ -842,3 +934,59 @@ def test_hld002_vocabulary_in_core_md():
     core = (Path(flow.__file__).parent / "core.md").read_text().lower()
     for term in ("runner", "task", "baton", "handoff", "decision"):
         assert term in core, f"HLD-002 vocabulary term missing from core.md: {term}"
+
+
+# --- HLD-015 the autonomy contract ------------------------------------------
+
+
+def test_hld015_verify_invariant():
+    """HLD-015 VERIFY: every raise FlowError in flow.py is tagged with the one
+    invariant it protects, drawn from the closed set dependency, identity,
+    ownership, lifecycle, existence; a raise that cannot be honestly tagged from
+    that set is flagged for review as candidate overreach; the agent-discretion
+    behaviors (done/escalate/split from any non-blocked state,
+    answer-then-runner-decides, feedback-magnitude-is-judged,
+    waking-as-a-decision) are intentional, not defects
+
+    The audit is a review-forcing tripwire: an untagged guard fails here and must
+    be justified against the closed set, not silently added."""
+    src = (Path(flow.__file__).parent / "flow.py").read_text()
+    tag = re.compile(r"#\s*INVARIANT:\s*(dependency|identity|ownership|lifecycle|existence)\b")
+    untagged = [
+        f"flow.py:{i}"
+        for i, line in enumerate(src.splitlines(), 1)
+        if "raise FlowError" in line and not tag.search(line)
+    ]
+    assert not untagged, (
+        f"untagged raise FlowError (candidate overreach — review required): {untagged}"
+    )
+
+
+# --- HLD-016 the output layer -----------------------------------------------
+
+
+def test_hld016_verify_invariant(conn, tmp_path):
+    """HLD-016 VERIFY: every task states a mandatory outcome at done — the task's
+    bound account (what/how/why), any size, where a long outcome only changes UX
+    (rendered as separate markdown) and is still an outcome, never a report; a
+    report is a distinct transcendent deliverable scoped to a subject bigger than
+    one task, produced deliberately by a report-purposed task; tasks and reports
+    are many-to-many and a report is updated under agent judgment (in-place,
+    add-section, supersede, or sweep); a report's lifecycle (active to deprecated,
+    with fate superseded or obsolete) is independent of any task's lifecycle; a
+    deprecated or obsolete report is immutable and a reference to it resolves to
+    its live successor; every report update is attributed
+
+    Implemented subset today (HLD-017): the mandatory, task-bound outcome at done.
+    The report layer is committed design with no runtime surface yet — its verb
+    surface is a deferred extension to HLD-009 and is not implemented here."""
+    # the outcome is mandatory and bound to its task
+    tid = flow.add(conn, "task with an account")
+    flow.done(conn, tid, "what: shipped it; how: minimal patch; why: committed surface")
+    t = flow._task(conn, tid)
+    assert t["state"] == "done"
+    assert "shipped it" in t["outcome"]
+
+    # the CLI refuses done without an outcome (argparse: outcome is positional)
+    with pytest.raises(SystemExit):
+        flow.main(["--db", str(tmp_path / "cli.db"), "done", "1"])
