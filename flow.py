@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Baton Flow — the agnostic task runtime.
 
-SQLite is the single source of truth. Markdown under .flow/batons/ is a one-way
-projection for human reading. Runners talk to this CLI only; never the DB directly.
+The durable store (SQLite) is the single source of truth. Markdown under
+.flow/batons/ is a derived projection — product surface for agents and humans to
+read (HLD-003), never a write path. Runners talk to this CLI only; never the DB
+directly.
 
-Lifecycle:  pending -> in_progress -> done   (done is reopenable)
-            in_progress -> blocked           (waiting on a human and/or children)
+Lifecycle:  pending -> in_progress -> done   (done is reopenable; the norm is to
+                                              supersede with a new referencing task)
+            in_progress -> blocked           (parked unassigned, label kept, on one
+                                              or more human answers and/or children)
             blocked -> pending               (woken when every dependency resolves)
 
 A task is runnable only when it has no unmet dependencies:
@@ -136,7 +140,7 @@ class FlowError(Exception):
 def _task(conn, task_id):
     row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
     if row is None:
-        raise FlowError(f"task {task_id} not found")
+        raise FlowError(f"task {task_id} not found")  # INVARIANT: existence
     return row
 
 
@@ -156,6 +160,19 @@ def _set_state(conn, task_id, state):
 def _touch(conn, task_id):
     """Refresh a task's lease stamp (HLD-014) without changing its state."""
     conn.execute("UPDATE tasks SET updated_at=? WHERE id=?", (now(), task_id))
+
+
+def _park(conn, task_id):
+    """Park a task as blocked and clear its assignee (HLD-004/005).
+
+    Parking unassigns: a woken task re-enters through `flow next` rather than
+    granting its former holder a silent resume. The label is kept so affinity
+    (HLD-010) tends to route the same session back.
+    """
+    conn.execute(
+        "UPDATE tasks SET state='blocked', assignee=NULL, updated_at=? WHERE id=?",
+        (now(), task_id),
+    )
 
 
 def _is_blocked(conn, task_id) -> bool:
@@ -195,7 +212,7 @@ def _reclaim_orphans(conn):
                 (tid, f"orphaned {r['reclaim_count']}x; escalating to a human", now()),
             )
             _append(conn, tid, "escalation", f"reclaimed {r['reclaim_count']}x without completion; escalated")
-            _set_state(conn, tid, "blocked")
+            _park(conn, tid)
         else:
             conn.execute(
                 "UPDATE tasks SET state='pending', assignee=NULL,"
@@ -218,7 +235,7 @@ def _require_owner(conn, task_id, session):
         return
     owner = _task(conn, task_id)["assignee"]
     if owner is not None and owner != session:
-        raise FlowError(f"you no longer hold task {task_id} (held by {owner})")
+        raise FlowError(f"you no longer hold task {task_id} (held by {owner})")  # INVARIANT: ownership
 
 
 def _maybe_wake(conn, task_id):
@@ -283,6 +300,9 @@ def next_task(conn, assignee=None):
                 "UPDATE tasks SET state='in_progress', assignee=?, updated_at=? WHERE id=?",
                 (assignee, now(), tid),
             )
+            # HLD-013: the claim is recorded on the baton within the same transaction.
+            _append(conn, tid, "system",
+                    f"claimed by session {assignee}" if assignee else "claimed (no session — v1 anonymous path)")
     for rid in reclaimed:  # refresh projections for tasks reclaimed/escalated above
         if rid != tid:
             project(conn, rid)
@@ -322,25 +342,25 @@ def escalate(conn, task_id, question, session=None):
         _require_owner(conn, task_id, session)
         t = _task(conn, task_id)
         if t["state"] == "done":
-            raise FlowError(f"task {task_id} is done; reopen it before escalating")
+            raise FlowError(f"task {task_id} is done; reopen it before escalating")  # INVARIANT: lifecycle
         conn.execute(
             "INSERT INTO escalations (task_id, question, created_at) VALUES (?,?,?)",
             (task_id, question, now()),
         )
         _append(conn, task_id, "escalation", question)
-        _set_state(conn, task_id, "blocked")
+        _park(conn, task_id)
     project(conn, task_id)
 
 
 def split(conn, task_id, child_texts, session=None):
     if not child_texts:
-        raise FlowError("split requires at least one child task")
+        raise FlowError("split requires at least one child task")  # INVARIANT: dependency
     child_ids = []
     with _tx(conn):
         _require_owner(conn, task_id, session)
         parent = _task(conn, task_id)
         if parent["state"] == "done":
-            raise FlowError(f"task {task_id} is done; reopen it before splitting")
+            raise FlowError(f"task {task_id} is done; reopen it before splitting")  # INVARIANT: lifecycle
         for text in child_texts:
             cid = conn.execute(
                 "INSERT INTO tasks (text, state, label, parent_id, created_at, updated_at)"
@@ -350,7 +370,7 @@ def split(conn, task_id, child_texts, session=None):
             _append(conn, cid, "system", f"created as child of task {task_id}")
             child_ids.append(cid)
         _append(conn, task_id, "split", f"split into tasks {child_ids}")
-        _set_state(conn, task_id, "blocked")
+        _park(conn, task_id)
     project(conn, task_id)
     for cid in child_ids:
         project(conn, cid)
@@ -363,7 +383,7 @@ def done(conn, task_id, outcome, session=None):
         _require_owner(conn, task_id, session)
         _task(conn, task_id)
         if _is_blocked(conn, task_id):
-            raise FlowError(
+            raise FlowError(  # INVARIANT: dependency
                 f"task {task_id} cannot be done: it still has unmet dependencies "
                 "(open escalation or unfinished children)"
             )
@@ -414,7 +434,7 @@ def reopen(conn, task_id):
     with _tx(conn):
         t = _task(conn, task_id)
         if t["state"] != "done":
-            raise FlowError(f"task {task_id} is not done (state={t['state']})")
+            raise FlowError(f"task {task_id} is not done (state={t['state']})")  # INVARIANT: lifecycle
         _set_state(conn, task_id, "pending")
         _append(conn, task_id, "system", "reopened")
     project(conn, task_id)
