@@ -1,93 +1,152 @@
-# Baton Flow Constitution
+# Baton Flow — Constitution (PROPOSAL)
 
-The anchored `HLD.md` (sections `HLD-001`..`HLD-012`) is the governing architecture.
-Every principle below traces to an HLD anchor or to a hard-won lesson from two prior
-attempts that failed when a data-model change cascaded through working code. These rules
-exist to make that failure mode impossible.
+**Status:** PROPOSAL ONLY. This is authored by Journey 2 as a proposal.
+It is applied to `.specify/memory/constitution.md` only at
+`CONSTITUTION_APPROVAL_GATE`, where SpecKit owns the applied constitution.
+
+**Source:** Derived from the 11 constitution-backed HLD sections
+(HLD-003/004/005/007/008/009/010/013/014/015/016).
+
+---
+
+## Identity
+
+Baton Flow is a context-management system for AI-assisted sessions. It produces
+durable deliverables (reports) across handoffs under human steering.
 
 ## Core Principles
 
-### I. HLD Is the Architecture Source of Truth (ARCH-001)
+1. **Single source of truth.** One durable state store holds all state. Markdown
+   projections are derived, re-derivable, and never part of a transaction.
+   (HLD-003)
 
-Specs, plans, and code MUST NOT contradict the facts in `HLD.md`. The HLD governs; SpecKit
-consumes it. Architecture changes happen in the HLD **first** (edit the section, re-validate
-`hld_map.parse_hld_file` clean), then flow forward into specs and code — never the reverse.
-A spec that needs to violate an HLD invariant is a signal to amend the HLD deliberately, not
-to diverge silently.
+2. **CLI-only writes.** Every mutation goes through named CLI verbs. No direct
+   database access. (HLD-009)
 
-### II. SQLite Is the Single Source of Truth; Markdown Is One-Way (HLD-003, HLD-008)
+3. **Named identity.** Every action is taken by a named session. There is no
+   anonymous path. (HLD-009, HLD-010)
 
-A SQLite database holds all state. Markdown files are a **read-only projection** for humans
-and are NEVER an input. The baton lives in the database and is read via the CLI
-(`flow context`), never parsed back from markdown. Any feature that treats a markdown file
-as authoritative input is rejected. This is the invariant whose violation destroyed prior
-attempts.
+4. **Five invariants, nothing more.** The engine constrains only: dependency,
+   identity, ownership, lifecycle, existence. Everything above that floor is
+   agent judgment. (HLD-015)
 
-### III. The Runner Contract Is AI-Agnostic (HLD-003, HLD-009) — and Contracts Are Separated From Processing (ARCH-002)
+5. **Means vs output.** The baton is context (the means); the outcome is the
+   task's account; the report is the deliverable (the output). They are
+   different kinds, not different sizes. (HLD-008, HLD-016)
 
-The execution loop (`core.md`) depends on exactly two interfaces: the `flow` CLI verbs and
-text/markdown. It MUST NOT name a specific AI. Runners use **only** the published CLI verbs
-— no direct database access, ever. The CLI contract (HLD-009) is a stable seam: it changes
-independently of processing behavior, and processing changes MUST NOT require contract
-changes. Human/ops verbs (`reply`, `reopen`, `list`) are not part of the runner loop.
+---
 
-### IV. Test-First and Regression-Ratchet (NON-NEGOTIABLE)
+## CONTRACT Rules
 
-This is the rule that breaks the restart loop:
+### CONTRACT-SINGLE-STORE
+The single durable store (currently SQLite) is the sole source of truth.
+Projections are derived and never canonical. A projection may be deleted and
+re-derived without data loss. (HLD-003)
 
-- TDD: a failing test is written and confirmed red before the implementation.
-- **Every slice reruns the tests of all previously completed slices.** A green new slice
-  that reds a prior slice is a failed slice.
-- The data model and the CLI/markdown contract are locked behind **characterization tests**
-  before they are extended. A change to the schema or a CLI verb MUST be accompanied by:
-  persistence round-trip and rollback tests, contract tests, and negative-invariant tests
-  (assert the forbidden state cannot occur).
-- No HLD invariant (the `HLD-VERIFY` lines on HIGH-risk sections) is considered implemented
-  without a test that would fail if it were violated.
+### CONTRACT-ONE-TX-PER-VERB
+Every CLI operation is exactly one all-or-nothing transaction. A crash
+mid-operation leaves no partial state. (HLD-013)
 
-### V. Common Foundation Before Dependents (ARCH-003) and Simplicity (HLD-010, HLD-011)
+### CONTRACT-SESSION-ENFORCEMENT
+Every CLI call carries a recognized session, enforced at the CLI entry point.
+A missing session is an error — reads included. (HLD-009)
 
-Shared/foundation capabilities are specified and built **before** dependent, user-facing
-behavior — bottom-up, no duplicate foundations. Build order:
-`001 → 009 → 004 → 005 → 006 → 007 → 008 → 010 → 002`. Simplicity is enforced: the scope
-deliberately stripped in HLD-011 (sockets, connection pools, health daemons, failover,
-web UI / HTTP API, environment staging, migration tooling) stays stripped. New complexity
-must cite a documented reason and an HLD anchor.
+### CONTRACT-FOUR-STATES
+Tasks have exactly four states: pending, in_progress, blocked, done.
+Transitions follow the defined state machine. The CHECK constraint in the
+schema is a lifecycle invariant. (HLD-004)
 
-## Lifecycle and Wait Invariants (HLD-004, HLD-005, HLD-007)
+### CONTRACT-DEPENDENCY-GUARD
+A task is runnable only when it has no unmet dependencies (open escalations or
+unfinished children). A task cannot be done with unmet dependencies. (HLD-004,
+HLD-005)
 
-These are enforced as hard rules, each backed by a negative-invariant test:
+### CONTRACT-CONCURRENT-ESCALATIONS
+A task may hold multiple escalations open concurrently. Each is a distinct
+dependency with its own stable ID/reference, owner/reply routing, and status.
+(HLD-005)
 
-- Exactly four states: `pending`, `in_progress`, `blocked`, `done`. No others.
-- A task is runnable **only** when it has no unmet dependencies.
-- A task CANNOT become `done` while it has unfinished children.
-- `done` is reopenable (by a human or a late reply); it is a resting state, not a grave.
-- `escalate` (wait on a human) and `split` (wait on children) are the **same primitive**:
-  the task goes `blocked` and the runner moves on. When every dependency resolves, the task
-  wakes to `pending`.
-- Binary reply rule: a human reply about the task itself appends to the baton and unblocks;
-  a reply about anything else becomes a new task and leaves the original blocked.
+### CONTRACT-ALL-RESOLVED-WAKE
+A task wakes to pending only when ALL its dependencies resolve — every open
+escalation answered and every child finished. (HLD-005)
 
-## Development Workflow and SpecKit Ownership Boundary (ARCH-004)
+### CONTRACT-ANSWER-FEEDBACK-SPLIT
+Answer resolves a specific open escalation by ID. Feedback steers (output
+update or new scope). Answer with no matching escalation is rejected. (HLD-007)
 
-- HLDspec prepares SpecKit inputs (the read-only first-run cycle produces the spec build
-  plan, dependency graph, and this constitution's inputs). **SpecKit** owns `spec.md`,
-  `plan.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md`, `tasks.md`, and
-  implementation artifacts. Do not hand-fabricate those; generate them through the tool.
-- Quality gates that MUST pass before advancing a slice:
-  1. `hld_map.parse_hld_file(HLD.md).validation_errors == []`.
-  2. `review_spec_build_plan.py --strict` exits 0 (no flagged specs, no conflicts).
-  3. The slice's own tests pass AND all prior slices' tests still pass (Principle IV).
-- The reproducible HLDspec workspace lives at `.hldspec-run/` (gitignored); regenerate with
-  `first_run_readonly.sh "$PWD/HLD.md" "$PWD/.hldspec-run" --force`.
+### CONTRACT-ATOMIC-CLAIM
+`flow next` takes the write lock (BEGIN IMMEDIATE) before reading the queue,
+selects the runnable task, records claimed-by on the baton, and claims in the
+same transaction. Two runners can never both hold one task. (HLD-013)
 
-## Governance
+### CONTRACT-SOFT-AFFINITY
+A session binds to the label of the first labeled task it claims. Bound, it
+prefers its label but falls back rather than idle. "None" only when no
+runnable work exists. (HLD-010)
 
-This constitution supersedes other practices for Baton Flow. Because the HLD is the source
-of truth (Principle I), any amendment that changes an architectural rule MUST update the
-relevant `HLD.md` section in the same change and re-pass the gates above. Version bumps
-follow semantic versioning: MAJOR for removing/redefining a principle, MINOR for adding a
-principle or section, PATCH for clarifications. Complexity must be justified against the
-stripped-scope list (Principle V). Runtime runner behavior is governed by `core.md`.
+### CONTRACT-OWNERSHIP-FENCE
+done/escalate/split are rejected when the task is held by a different named
+session. An unowned task stays operable by any named session. note/decide are
+multi-writer, never fenced. feedback is unfenced (creation verb). (HLD-014)
 
-**Version**: 1.0.0 | **Ratified**: 2026-05-29 | **Last Amended**: 2026-05-29
+### CONTRACT-LEASE-RECLAIM
+A task in_progress past LEASE_TTL is reclaimable. Reclaim returns to pending,
+clears assignee, records reason, runs under BEGIN IMMEDIATE. Only in_progress
+is reclaimed. (HLD-014)
+
+### CONTRACT-FLAKY-MARK
+reclaim_count saturates at RECLAIM_MAX. At/past the ceiling, further
+orphaning escalates immediately with a scoped escalation. The mark never
+resets — a fresh start is a new task. (HLD-014)
+
+### CONTRACT-MANDATORY-OUTCOME
+Every task states a mandatory outcome at done — its bound account
+(what/how/why). Outcome size is a UX detail, not a kind change. (HLD-016)
+
+### CONTRACT-REPORT-LIFECYCLE
+Reports have lifecycle: active → deprecated (superseded or obsolete). A
+deprecated report is immutable. References are deprecation-aware — resolve to
+the live successor. Every update is attributed. (HLD-016)
+
+---
+
+## DATA Rules
+
+### DATA-BATON-OWNERSHIP
+The baton lives in the database. Its canonical read path is the CLI. The
+markdown projection is derived product surface. (HLD-008, HLD-003)
+
+### DATA-REPORT-OWNERSHIP
+Reports are DB-owned. Markdown projections are derived product surface. A
+report's lifecycle is independent of any task's. (HLD-016, HLD-003)
+
+### DATA-PROJECTION-ROLES
+Markdown projections carry three roles: (1) agent integration/handoff,
+(2) context state for WIP, (3) user-facing context and reporting. They are
+product surface, not just display. An agent may read directly when the
+projection preserves stable IDs, references, context state, reply context,
+and report/log links. (HLD-003)
+
+### DATA-ESCALATION-IDENTITY
+Each escalation carries its own stable ID/reference, owner/reply routing, and
+status. These are distinct dependencies, individually traceable and resolvable.
+(HLD-005)
+
+### DATA-SESSION-DURABLE
+A session row persists across reclaims. Reclaim takes the task, not the
+identity. The bound label survives. (HLD-010)
+
+---
+
+## Invariant Boundary (HLD-015)
+
+The engine constrains ONLY:
+- **dependency** — no done with unmet deps; split requires ≥1 child.
+- **identity** — every action by a named session; no anonymous path.
+- **ownership** — held task can't be transitioned by another session.
+- **lifecycle** — four states, legal transitions, deprecated-report immutability.
+- **existence** — operations target a real task/report.
+
+Everything above this floor is the agent's call. The tagging audit
+(`raise FlowError` → invariant tag) enforces this boundary. A guard that
+can't be tagged is candidate overreach.
