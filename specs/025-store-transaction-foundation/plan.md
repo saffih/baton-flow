@@ -21,7 +21,8 @@ dependencies.
 
 ## Technical Context
 
-**Language/Version**: Python 3.9 (system `python3`; stdlib only)
+**Language/Version**: Python 3.10+ (per HLD; stdlib only. Local plan-time runner was
+Python 3.9.6 — execution environment evidence only, not the project target)
 
 **Primary Dependencies**: None beyond the standard library (`sqlite3`, `argparse`,
 `contextlib`, `pathlib`, `datetime`)

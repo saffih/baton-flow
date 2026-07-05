@@ -3,14 +3,16 @@
 **Feature**: `025-store-transaction-foundation`
 
 How to exercise and verify the foundation guarantees locally. All commands run from the
-repository root; every call names a session (`--session <name>`), reads included.
+repository root. Note: mandatory sessions on every call (HLD-009, reads included) are
+target design; the current CLI accepts `--session` only on `next`, `done`, `escalate`,
+and `split` — the commands below match the current CLI.
 
 ## 1. Basic operation → store → projection
 
 ```bash
-./flow add "demo task" --session me
+./flow add "demo task"
 ./flow next --session me            # atomic claim: prints the claimed task id
-./flow context 1 --session me       # canonical read path: CLI against the store
+./flow context 1                    # canonical read path: CLI against the store
 cat .flow/batons/1.md               # derived projection (read-only surface)
 ```
 
@@ -21,8 +23,8 @@ elements — stable ID, references, baton/context state, reply context, report/l
 
 ```bash
 rm .flow/batons/1.md                # delete the projection
-./flow context 1 --session me       # nothing lost: the store is the source of truth
-./flow note 1 "still here" --session me
+./flow context 1                    # nothing lost: the store is the source of truth
+./flow note 1 "still here"
 cat .flow/batons/1.md               # regenerated after the commit (FR-010)
 ```
 
@@ -44,7 +46,7 @@ functioning subsequent writer.
 ## 4. Concurrent claiming (SC-003)
 
 ```bash
-./flow add "contested task" --session me
+./flow add "contested task"
 ./flow next --session runner-a & ./flow next --session runner-b & wait
 ```
 
