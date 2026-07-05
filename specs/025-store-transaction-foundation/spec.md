@@ -94,6 +94,6 @@ Two CLI invocations (e.g. two `flow next` calls) run at, or close to, the same t
 
 ## Assumptions
 
-- The specific storage engine is an implementation choice; this spec constrains only the durability, transactionality, and concurrency properties described in REQ-001 through REQ-010 (single source of truth, WAL journaling, busy_timeout, synchronous=NORMAL), not a named product.
+- The specific storage engine is an implementation choice; this spec constrains only the durability, transactionality, and concurrency properties described in FR-001 through FR-010 (single source of truth, WAL journaling, busy_timeout, synchronous=NORMAL), not a named product.
 - "Markdown projections" refers to the same class of generated, derived-view files described elsewhere in the HLD (agent handoff surface, WIP context, user-facing reporting); this feature defines their write/regeneration contract, not their specific layout.
-- No implementation detail beyond what HLD-003 and HLD-013 state is assumed; all ten requirements (REQ-001–REQ-010) are already fully specified by the source HLD, so no [NEEDS CLARIFICATION] markers are required for this feature.
+- No implementation detail beyond what HLD-003 and HLD-013 state is assumed; all ten functional requirements (FR-001–FR-010, traced from source requirements REQ-001–REQ-010) are already fully specified by the source HLD, so no unresolved clarification markers are needed for this feature.
