@@ -1,0 +1,175 @@
+{
+  "anchors": {
+    "HLD-001": {
+      "heading": "## HLD-001 - What it is",
+      "line_end": 39,
+      "line_start": 15,
+      "risk": "MEDIUM",
+      "role": "purpose",
+      "sha256": "e03c7f3d1bc4096cf6c14246397dd3eecc61eae65250e8117e239066b4352bf2",
+      "status": "active",
+      "title": "What it is"
+    },
+    "HLD-002": {
+      "heading": "## HLD-002 - Vocabulary",
+      "line_end": 58,
+      "line_start": 40,
+      "risk": "LOW",
+      "role": "reference",
+      "sha256": "a2fd4faa8ea4fb75ce64b4122393b6a7427695b832c978fb5b6762014bc5e57f",
+      "status": "active",
+      "title": "Vocabulary"
+    },
+    "HLD-003": {
+      "heading": "## HLD-003 - Core model",
+      "line_end": 96,
+      "line_start": 59,
+      "risk": "HIGH",
+      "role": "governance",
+      "sha256": "f47e975be9f962b17c986858ed339dbbc94b47d4f69a087c5863cb70b6ccec59",
+      "status": "active",
+      "title": "Core model"
+    },
+    "HLD-004": {
+      "heading": "## HLD-004 - The task lifecycle",
+      "line_end": 139,
+      "line_start": 97,
+      "risk": "HIGH",
+      "role": "architecture",
+      "sha256": "4cec724a7b76f3889cfd7b2c01a1e8301920acf7e475a0e5943dcae85bdf2596",
+      "status": "active",
+      "title": "The task lifecycle"
+    },
+    "HLD-005": {
+      "heading": "## HLD-005 - The wait model (fork-join)",
+      "line_end": 168,
+      "line_start": 140,
+      "risk": "HIGH",
+      "role": "architecture",
+      "sha256": "ba2479703ca1e85ad41663037b79894aa9a84146fb7837a4994f995b716eae45",
+      "status": "active",
+      "title": "The wait model (fork-join)"
+    },
+    "HLD-006": {
+      "heading": "## HLD-006 - Escalation triggers (runner \u2192 human)",
+      "line_end": 189,
+      "line_start": 169,
+      "risk": "MEDIUM",
+      "role": "processing",
+      "sha256": "66c061817448f01e9855e34d931b93ae045b447133cbbc2cf2c54594e68b0b46",
+      "status": "active",
+      "title": "Escalation triggers (runner \u2192 human)"
+    },
+    "HLD-007": {
+      "heading": "## HLD-007 - Human-in-the-loop: answer and feedback",
+      "line_end": 223,
+      "line_start": 190,
+      "risk": "MEDIUM",
+      "role": "processing",
+      "sha256": "d4700a0e185093bcd46ffa0e639aa911a73de115d567231abe38761786b54f83",
+      "status": "active",
+      "title": "Human-in-the-loop: answer and feedback"
+    },
+    "HLD-008": {
+      "heading": "## HLD-008 - The baton: the context substrate",
+      "line_end": 246,
+      "line_start": 224,
+      "risk": "HIGH",
+      "role": "architecture",
+      "sha256": "06f489e80d5da85469673106f4b901c7fa0941f97a5f95d9611008af3629dca2",
+      "status": "active",
+      "title": "The baton: the context substrate"
+    },
+    "HLD-009": {
+      "heading": "## HLD-009 - The CLI contract",
+      "line_end": 298,
+      "line_start": 247,
+      "risk": "HIGH",
+      "role": "api",
+      "sha256": "f27ed9b8139e5d43366efb2f44cbebb0b696fc3bb82570896c32fcd1eb4cae9a",
+      "status": "active",
+      "title": "The CLI contract"
+    },
+    "HLD-010": {
+      "heading": "## HLD-010 - Work routing (mandatory named sessions, soft label affinity)",
+      "line_end": 324,
+      "line_start": 299,
+      "risk": "HIGH",
+      "role": "architecture",
+      "sha256": "158ac37920ee29c455fb1b20651a3ed52186d218eff257c637d5a58ede915489",
+      "status": "active",
+      "title": "Work routing (mandatory named sessions, soft label affinity)"
+    },
+    "HLD-011": {
+      "heading": "## HLD-011 - Scope boundary",
+      "line_end": 352,
+      "line_start": 325,
+      "risk": "LOW",
+      "role": "governance",
+      "sha256": "512f3da58669f0554a3f6419ad5f2bda43d47d7789be9c78cb7a96526f2c4395",
+      "status": "active",
+      "title": "Scope boundary"
+    },
+    "HLD-012": {
+      "heading": "## HLD-012 - Technology",
+      "line_end": 370,
+      "line_start": 353,
+      "risk": "LOW",
+      "role": "operations",
+      "sha256": "6602fc3e440ee3d71e2cce81977774196ab8544fc9cee0411f6143ebfa803ef8",
+      "status": "active",
+      "title": "Technology"
+    },
+    "HLD-013": {
+      "heading": "## HLD-013 - Concurrency and durability",
+      "line_end": 397,
+      "line_start": 371,
+      "risk": "HIGH",
+      "role": "architecture",
+      "sha256": "22fe6104f09eb07d2d62d44ccbaa5647aa557395b1155d65794608f6bf587f30",
+      "status": "active",
+      "title": "Concurrency and durability"
+    },
+    "HLD-014": {
+      "heading": "## HLD-014 - Recovery: lease, see-and-act reclaim, fence, flaky-mark",
+      "line_end": 438,
+      "line_start": 398,
+      "risk": "HIGH",
+      "role": "architecture",
+      "sha256": "fd1b86150c747dfc28d8cdff8a62336294f84917f806f6d42139614e2c945eae",
+      "status": "active",
+      "title": "Recovery: lease, see-and-act reclaim, fence, flaky-mark"
+    },
+    "HLD-015": {
+      "heading": "## HLD-015 - The autonomy contract: enforce invariants, delegate judgment",
+      "line_end": 478,
+      "line_start": 439,
+      "risk": "HIGH",
+      "role": "governance",
+      "sha256": "f979e6b4bdde4b3d3b0f729f00179cee76ed22e852f2c16d8c0ff9cf341b2d6d",
+      "status": "active",
+      "title": "The autonomy contract: enforce invariants, delegate judgment"
+    },
+    "HLD-016": {
+      "heading": "## HLD-016 - The output layer: outcome and report",
+      "line_end": 536,
+      "line_start": 479,
+      "risk": "HIGH",
+      "role": "architecture",
+      "sha256": "b8d9e29d56aaa203c5bcaf7162b7edb7a5bf0e3c37eb512000246043b7a64b0e",
+      "status": "active",
+      "title": "The output layer: outcome and report"
+    },
+    "HLD-017": {
+      "heading": "## HLD-017 - Requirements and feature candidates",
+      "line_end": 585,
+      "line_start": 537,
+      "risk": "LOW",
+      "role": "governance",
+      "sha256": "ab29f96631efe09600282476d3df3647499a5e9a08e2d471b85424b4fa40408f",
+      "status": "active",
+      "title": "Requirements and feature candidates"
+    }
+  },
+  "schema_version": 1
+}
