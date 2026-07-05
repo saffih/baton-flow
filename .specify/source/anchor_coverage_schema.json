@@ -1,0 +1,41 @@
+{
+  "properties": {
+    "anchors": {
+      "additionalProperties": {
+        "properties": {
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "implemented",
+              "partially_implemented",
+              "deferred",
+              "blocked",
+              "not_applicable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "evidence"
+        ],
+        "type": "object"
+      },
+      "type": "object"
+    },
+    "phase": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "phase",
+    "anchors"
+  ],
+  "schema_version": 1,
+  "type": "object"
+}

@@ -1,0 +1,228 @@
+{
+  "canonical_flow": [
+    "speckit.specify",
+    "speckit.plan",
+    "speckit.tasks",
+    "speckit.analyze",
+    "slice_controlled_implementation"
+  ],
+  "implement_rule": "Do not run raw all-task implementation unless full implementation is explicitly approved.",
+  "schema_version": 1,
+  "slices": [
+    {
+      "allowed_work": [
+        "workspace setup",
+        "build/test commands",
+        "directory structure",
+        "source mirror validation"
+      ],
+      "forbidden_work": [
+        "business behavior",
+        "UI behavior",
+        "database product schema"
+      ],
+      "name": "FOUNDATION",
+      "purpose": "Create valid workspace, build/test commands, and source-package control.",
+      "required_tests": [
+        "build command runs",
+        "test command runs",
+        "source mirror is generated and valid"
+      ]
+    },
+    {
+      "allowed_work": [
+        "entry point",
+        "empty boundaries",
+        "health/smoke path",
+        "dependency wiring"
+      ],
+      "forbidden_work": [
+        "real business rules",
+        "full UI",
+        "non-required persistence"
+      ],
+      "name": "WALKING_SKELETON",
+      "purpose": "Create a minimal executable path through the app with placeholders.",
+      "required_tests": [
+        "app starts",
+        "smoke path passes",
+        "invalid config fails clearly"
+      ]
+    },
+    {
+      "allowed_work": [
+        "entities",
+        "value objects",
+        "enums/statuses",
+        "domain errors",
+        "pure invariants"
+      ],
+      "forbidden_work": [
+        "database",
+        "API",
+        "CLI",
+        "UI",
+        "network"
+      ],
+      "name": "DOMAIN_MODEL",
+      "purpose": "Define entities, value objects, statuses, domain errors, and pure invariants.",
+      "required_tests": [
+        "entity tests",
+        "value object tests",
+        "negative invariant tests"
+      ]
+    },
+    {
+      "allowed_work": [
+        "ports/interfaces",
+        "DTOs",
+        "schemas",
+        "events/messages",
+        "repository contracts"
+      ],
+      "forbidden_work": [
+        "hidden business decisions",
+        "adapter implementation unless fake/in-memory"
+      ],
+      "name": "CONTRACTS",
+      "purpose": "Define stable ports, DTOs, schemas, and external-facing contracts.",
+      "required_tests": [
+        "schema validation tests",
+        "port contract tests",
+        "invalid payload tests"
+      ]
+    },
+    {
+      "allowed_work": [
+        "use cases",
+        "application services",
+        "workflow tests",
+        "domain/application tests"
+      ],
+      "forbidden_work": [
+        "controllers",
+        "UI",
+        "database migrations unless explicitly required"
+      ],
+      "name": "BUSINESS_LOGIC",
+      "purpose": "Implement use cases, workflows, validation rules, and state transitions.",
+      "required_tests": [
+        "focused use-case tests",
+        "error-path tests",
+        "prior domain and contract regression"
+      ]
+    },
+    {
+      "allowed_work": [
+        "database schema",
+        "migrations",
+        "repository adapters",
+        "transactions",
+        "persistence tests"
+      ],
+      "forbidden_work": [
+        "new business rules",
+        "UI",
+        "API behavior changes not required by contract"
+      ],
+      "name": "PERSISTENCE",
+      "purpose": "Store and retrieve state through adapters that satisfy the contracts.",
+      "required_tests": [
+        "migration from empty DB",
+        "repository round-trip tests",
+        "rollback/constraint tests"
+      ]
+    },
+    {
+      "allowed_work": [
+        "routes",
+        "controllers",
+        "request/response mapping",
+        "API tests",
+        "OpenAPI if required"
+      ],
+      "forbidden_work": [
+        "new business rules",
+        "UI",
+        "unapproved persistence changes"
+      ],
+      "name": "API",
+      "purpose": "Expose approved use cases through HTTP/RPC or equivalent service API.",
+      "required_tests": [
+        "route tests",
+        "status code tests",
+        "request validation tests",
+        "error mapping tests"
+      ]
+    },
+    {
+      "allowed_work": [
+        "commands",
+        "flags/arguments",
+        "exit codes",
+        "stdout/stderr behavior",
+        "CLI tests"
+      ],
+      "forbidden_work": [
+        "new business rules",
+        "UI",
+        "unapproved API changes"
+      ],
+      "name": "CLI",
+      "purpose": "Expose approved use cases through command-line commands.",
+      "required_tests": [
+        "command parsing tests",
+        "exit code tests",
+        "stdout/stderr tests",
+        "CLI integration tests"
+      ]
+    },
+    {
+      "allowed_work": [
+        "screens",
+        "components",
+        "forms",
+        "UI state",
+        "accessibility checks",
+        "E2E tests"
+      ],
+      "forbidden_work": [
+        "backend rule changes without approval",
+        "new product behavior not anchored in HLD"
+      ],
+      "name": "UI",
+      "purpose": "Expose approved user flows visually.",
+      "required_tests": [
+        "component tests",
+        "form validation tests",
+        "loading/empty/error state tests",
+        "accessibility checks",
+        "E2E flow tests"
+      ]
+    },
+    {
+      "allowed_work": [
+        "full regression",
+        "E2E tests",
+        "security checks",
+        "performance smoke",
+        "docs",
+        "release validation"
+      ],
+      "forbidden_work": [
+        "new scope",
+        "uncited product behavior",
+        "silent HLD truth changes"
+      ],
+      "name": "INTEGRATION_HARDENING",
+      "purpose": "Close release gaps and prove the product works as one system.",
+      "required_tests": [
+        "full unit suite",
+        "full integration suite",
+        "full E2E suite",
+        "lint/type/security checks where applicable"
+      ]
+    }
+  ],
+  "source_truth_rule": "One full HLD, one full SpecKit spec/plan/tasks/analyze cycle, many controlled implementation passes."
+}

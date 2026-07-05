@@ -1,0 +1,110 @@
+{
+  "files": {
+    "active_spec_materialization_receipt": {
+      "filename": "active_spec_materialization_receipt.json",
+      "present": false,
+      "sha256": null
+    },
+    "anchor_coverage_schema": {
+      "filename": "anchor_coverage_schema.json",
+      "present": true,
+      "sha256": "17e5e90de83d2e204c712d92f99ea9b53d16d732418d36dd72f826249fa188ac"
+    },
+    "architecture_package": {
+      "filename": "architecture_package.json",
+      "present": true,
+      "sha256": "9a701827df2a7fdf3088e6e8b7af0c4759e132629e0826fd8c80f53dfe1ad95f"
+    },
+    "constitution_proposal": {
+      "filename": "constitution.proposed.md",
+      "present": true,
+      "sha256": "a39133a1b1629ba768af56d4ef80e1df99e8bb3bcc9326bc516ec297b5060548"
+    },
+    "consultant_prompt": {
+      "filename": "consultant_prompt.md",
+      "present": true,
+      "sha256": "139f5770d3473d962ff86329f75f3cedc6b12e2de40eb585389530ba35198ad1"
+    },
+    "engineering_guidelines": {
+      "filename": "engineering_guidelines.md",
+      "present": true,
+      "sha256": "06e55edd480dbd5bf8f1f277cbd59bf945934ee3aff579ae5c5197f909b0d8cb"
+    },
+    "helper_recommendations": {
+      "filename": "helper_recommendations.json",
+      "present": false,
+      "sha256": null
+    },
+    "hld": {
+      "filename": "HLD.md",
+      "present": true,
+      "sha256": "3c376ae9917b05d09d71fd73037b41a800eecbe51eaa5167481f1db11cf7e5d0"
+    },
+    "hld_coverage_ledger": {
+      "filename": "hld_coverage_ledger.json",
+      "present": false,
+      "sha256": null
+    },
+    "hld_coverage_scope": {
+      "filename": "hld_coverage_scope.json",
+      "present": false,
+      "sha256": null
+    },
+    "human_review_package": {
+      "filename": "human_review_package.md",
+      "present": false,
+      "sha256": null
+    },
+    "implementation_slices": {
+      "filename": "implementation_slices.json",
+      "present": true,
+      "sha256": "b7e65459c245456840736f40b2fb3fc191f19b94b97f529053111a423de420d5"
+    },
+    "implementation_slicing_policy": {
+      "filename": "implementation_slicing_policy.md",
+      "present": true,
+      "sha256": "cdb28991beb4a66a0528b4cdc099cc9bec93f7d9c47417f61503a3e39de5ab42"
+    },
+    "marked_hld": {
+      "filename": "HLD.marked.md",
+      "present": true,
+      "sha256": "4ae5e004b119a1ee2ba7c6071585ea6431f34676034216abaa68157d28a9822a"
+    },
+    "reference_map": {
+      "filename": "hld_reference_map.json",
+      "present": true,
+      "sha256": "9cd09896a4d77aad8a4ed94f3cb52d6767efcb3c9f4189b525d6532d5852c80e"
+    },
+    "runbook": {
+      "filename": "speckit_runbook.md",
+      "present": true,
+      "sha256": "b963034ce02292e1c347e711bfac01754f7b1b111f33dc8f843aadd69c184a02"
+    },
+    "runner_prompt": {
+      "filename": "runner_prompt.md",
+      "present": true,
+      "sha256": "7fc1afdec21469cd3e406895c3ce48e5df028dd55726d9cfc7442101b2da917c"
+    },
+    "single_spec_input": {
+      "filename": "speckit_single_spec_input.md",
+      "present": true,
+      "sha256": "7cc8395a7333ba9819e977bdd24efd94d2d7f896878a4c54dd8aeff8aed5494e"
+    },
+    "slice_test_policy": {
+      "filename": "slice_test_policy.md",
+      "present": true,
+      "sha256": "025677e24022fe857d5fb1e7ad1442d53a425e65407f1505a89a037384276bd4"
+    },
+    "spec_backlog": {
+      "filename": "spec_backlog.json",
+      "present": false,
+      "sha256": null
+    },
+    "speckit_slice_execution_prompt": {
+      "filename": "speckit_slice_execution_prompt.md",
+      "present": true,
+      "sha256": "ce697ede4ac6b5bba0a51c4c607d2c287b74b8bb14b8c6e6ea8cbae06cb1c351"
+    }
+  },
+  "schema_version": 1
+}
