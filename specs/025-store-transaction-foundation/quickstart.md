@@ -76,7 +76,13 @@ in a partial state — atomicity holds at every point.
 python3 -m pytest test_flow.py -q
 ```
 
-Foundation-relevant coverage: connection hardening, concurrent claim uniqueness,
-projection write + deletion-survivability, rollback on failure. Planned additions per
-research Decisions 5–6: process-kill crash injection, busy-timeout clean failure,
-FR-004 projection element completeness.
+73 tests, all green. Foundation-relevant coverage: connection hardening (including
+explicit `isolation_level=None` transaction control), concurrent claim uniqueness,
+projection write + deletion-survivability, in-process rollback-on-failure leaving no
+partial state, process-kill crash injection (SC-001), busy-timeout clean failure with
+recovery once the lock releases (spec edge case 3), the atomic claim protocol's
+all-or-nothing property on a failed claim attempt (FR-008), FR-004 projection element
+completeness across a full lifecycle (claim, escalate/reply, split, note/decide, done),
+hand-edited projections being ignored and overwritten on regeneration (FR-005), and
+projections regenerating only after commit, never after a rolled-back operation
+(FR-010).

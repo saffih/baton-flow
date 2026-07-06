@@ -34,7 +34,7 @@ Single-file CLI tool at repository root (per plan.md Structure Decision — no `
 **Purpose**: Pin the green baseline before any change — this feature ratifies existing
 behavior, so the starting state must be known-good.
 
-- [ ] T001 Confirm green brownfield baseline: run `python3 -m pytest test_flow.py -q` from the repository root and record that all 66 existing tests pass unmodified before any change in this feature
+- [X] T001 Confirm green brownfield baseline: run `python3 -m pytest test_flow.py -q` from the repository root and record that all 66 existing tests pass unmodified before any change in this feature
 
 ---
 
@@ -45,7 +45,7 @@ on. Characterization before any test additions (brownfield rule).
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T002 Ratify FR-009 connection settings against the contract: in `test_flow.py`, verify `test_connection_hardening` asserts `journal_mode=WAL`, `busy_timeout` > 0 (bounded-wait contention), and `synchronous=NORMAL` for `flow.connect()` per `specs/025-store-transaction-foundation/contracts/store-transaction.md` § Chosen-implementation bindings; extend the test with any missing assertion, including explicit transaction control (`isolation_level=None` on the connection)
+- [X] T002 Ratify FR-009 connection settings against the contract: in `test_flow.py`, verify `test_connection_hardening` asserts `journal_mode=WAL`, `busy_timeout` > 0 (bounded-wait contention), and `synchronous=NORMAL` for `flow.connect()` per `specs/025-store-transaction-foundation/contracts/store-transaction.md` § Chosen-implementation bindings; extend the test with any missing assertion, including explicit transaction control (`isolation_level=None` on the connection)
 
 **Checkpoint**: Connection contract ratified — user story verification can begin
 
@@ -63,8 +63,8 @@ post-operation state, never a partial mix; a subsequent writer proceeds normally
 
 ### Verification for User Story 1
 
-- [ ] T003 [US1] Characterize in-process rollback (FR-007, acceptance scenarios 1–2): verify existing rollback-on-failure coverage in `test_flow.py` asserts that an exception raised inside a `_tx()` operation leaves the store exactly at the pre-operation state (compare full task rows and baton entries before/after), and that a normally-completed operation applies as a single unit; add or extend a characterization test in `test_flow.py` if any of these assertions is missing
-- [ ] T004 [US1] Crash-injection test (SC-001, spec edge case 1, research Decision 5): add a test in `test_flow.py` that spawns a child Python process which opens the store via `flow.connect()`, executes `BEGIN IMMEDIATE` plus at least one write to a task row and a baton entry, signals readiness to the parent (deterministic barrier in the test harness — no changes to `flow.py`), then blocks; the test SIGKILLs the child, reopens the store, asserts the exact pre-operation state (no partial writes), and asserts a subsequent writer commits normally (no leftover lock)
+- [X] T003 [US1] Characterize in-process rollback (FR-007, acceptance scenarios 1–2): verify existing rollback-on-failure coverage in `test_flow.py` asserts that an exception raised inside a `_tx()` operation leaves the store exactly at the pre-operation state (compare full task rows and baton entries before/after), and that a normally-completed operation applies as a single unit; add or extend a characterization test in `test_flow.py` if any of these assertions is missing
+- [X] T004 [US1] Crash-injection test (SC-001, spec edge case 1, research Decision 5): add a test in `test_flow.py` that spawns a child Python process which opens the store via `flow.connect()`, executes `BEGIN IMMEDIATE` plus at least one write to a task row and a baton entry, signals readiness to the parent (deterministic barrier in the test harness — no changes to `flow.py`), then blocks; the test SIGKILLs the child, reopens the store, asserts the exact pre-operation state (no partial writes), and asserts a subsequent writer commits normally (no leftover lock)
 
 **Checkpoint**: Crash atomicity (the foundational reliability guarantee) is verified end to
 end — MVP complete
@@ -83,9 +83,9 @@ elements present; confirm no mechanism persists changes made through the project
 
 ### Verification for User Story 2
 
-- [ ] T005 [US2] FR-004 projection completeness test (research Decision 6b): add a test in `test_flow.py` that builds one task exercising every required element class — claim (assignee), escalate + reply (reply context and per-escalation stable ID), split (parent/child task references), note/decide baton entries, done with outcome — regenerates the projection via `flow.project()`, and asserts the markdown at `.flow/batons/<id>.md` preserves stable IDs, task references, baton/context state (state, assignee, label, outcome, entries in order), reply context (question and answer), and links to relevant reports/logs, per `specs/025-store-transaction-foundation/contracts/projection.md` § Required preserved elements
-- [ ] T006 [US2] Characterize no-write-path and re-derivability (FR-002/FR-005, acceptance scenario 2, spec edge case 2): verify `test_context_survives_markdown_deletion` and `test_hld008_verify_invariant` in `test_flow.py` cover deletion-survivability and non-authoritative staleness; extend `test_flow.py` with an assertion that a hand-edited projection file at `.flow/batons/<id>.md` is ignored by the system and overwritten by the next regeneration
-- [ ] T007 [US2] Post-commit-only ordering test (FR-010): add a test in `test_flow.py` asserting that a failed (rolled-back) operation leaves the projection file untouched at its prior committed content, and that a successful operation regenerates the projection only after commit, per `specs/025-store-transaction-foundation/contracts/projection.md` § Write rules
+- [X] T005 [US2] FR-004 projection completeness test (research Decision 6b): add a test in `test_flow.py` that builds one task exercising every required element class — claim (assignee), escalate + reply (reply context and per-escalation stable ID), split (parent/child task references), note/decide baton entries, done with outcome — regenerates the projection via `flow.project()`, and asserts the markdown at `.flow/batons/<id>.md` preserves stable IDs, task references, baton/context state (state, assignee, label, outcome, entries in order), reply context (question and answer), and links to relevant reports/logs, per `specs/025-store-transaction-foundation/contracts/projection.md` § Required preserved elements
+- [X] T006 [US2] Characterize no-write-path and re-derivability (FR-002/FR-005, acceptance scenario 2, spec edge case 2): verify `test_context_survives_markdown_deletion` and `test_hld008_verify_invariant` in `test_flow.py` cover deletion-survivability and non-authoritative staleness; extend `test_flow.py` with an assertion that a hand-edited projection file at `.flow/batons/<id>.md` is ignored by the system and overwritten by the next regeneration
+- [X] T007 [US2] Post-commit-only ordering test (FR-010): add a test in `test_flow.py` asserting that a failed (rolled-back) operation leaves the projection file untouched at its prior committed content, and that a successful operation regenerates the projection only after commit, per `specs/025-store-transaction-foundation/contracts/projection.md` § Write rules
 
 **Checkpoint**: The derived-view read contract is verified independently of US1 and US3
 
@@ -103,8 +103,8 @@ whose wait exceeds the busy timeout fails cleanly.
 
 ### Verification for User Story 3
 
-- [ ] T008 [US3] Characterize the atomic claim protocol (FR-008, SC-003, acceptance scenario 1): verify `test_concurrent_next_claims_each_task_once` and `test_claim_recorded_on_baton` in `test_flow.py` together assert single-winner claiming and the claimed-by baton record; extend `test_flow.py` with an all-or-nothing pairing assertion — after a failed (rolled-back) claim attempt, neither the assignee/state change nor the claimed-by baton entry is present; they appear together or not at all (same-transaction property of the claim protocol in `specs/025-store-transaction-foundation/contracts/store-transaction.md` § Atomic claim protocol)
-- [ ] T009 [US3] Busy-timeout clean-failure test (spec edge case 3, acceptance scenario 2, research Decision 6a): add a test in `test_flow.py` that holds `BEGIN IMMEDIATE` on one connection while a second connection — with a short per-connection `PRAGMA busy_timeout` set inside the test for speed — attempts a write; assert the second writer fails cleanly (`sqlite3.OperationalError`, no partial write visible after failure) and that the same writer succeeds once the first connection releases the lock, per `specs/025-store-transaction-foundation/contracts/store-transaction.md` § Error behavior
+- [X] T008 [US3] Characterize the atomic claim protocol (FR-008, SC-003, acceptance scenario 1): verify `test_concurrent_next_claims_each_task_once` and `test_claim_recorded_on_baton` in `test_flow.py` together assert single-winner claiming and the claimed-by baton record; extend `test_flow.py` with an all-or-nothing pairing assertion — after a failed (rolled-back) claim attempt, neither the assignee/state change nor the claimed-by baton entry is present; they appear together or not at all (same-transaction property of the claim protocol in `specs/025-store-transaction-foundation/contracts/store-transaction.md` § Atomic claim protocol)
+- [X] T009 [US3] Busy-timeout clean-failure test (spec edge case 3, acceptance scenario 2, research Decision 6a): add a test in `test_flow.py` that holds `BEGIN IMMEDIATE` on one connection while a second connection — with a short per-connection `PRAGMA busy_timeout` set inside the test for speed — attempts a write; assert the second writer fails cleanly (`sqlite3.OperationalError`, no partial write visible after failure) and that the same writer succeeds once the first connection releases the lock, per `specs/025-store-transaction-foundation/contracts/store-transaction.md` § Error behavior
 
 **Checkpoint**: All three user stories independently verified
 
@@ -115,9 +115,9 @@ whose wait exceeds the busy timeout fails cleanly.
 **Purpose**: Close the traceability loop and align feature docs with the delivered
 verification.
 
-- [ ] T010 [P] Update `specs/025-store-transaction-foundation/quickstart.md` § 6 to move the crash-injection, busy-timeout clean-failure, and FR-004 completeness tests from "planned additions" to existing coverage, with the final test count
-- [ ] T011 [P] Traceability sweep (SC-004): confirm each of FR-001–FR-010 maps to at least one test in `test_flow.py` or a stated property in `specs/025-store-transaction-foundation/contracts/store-transaction.md` / `specs/025-store-transaction-foundation/contracts/projection.md`, and that each maps to HLD-003 or HLD-013; including an explicit FR-006 mechanical check: scan `core.md` and `flow.py` for named AI-implementation/model/vendor references (expect zero matches), confirming the loop depends only on the CLI and markdown/text interfaces; add any missing test to `test_flow.py` before closing this task
-- [ ] T012 Full validation: run `python3 -m pytest test_flow.py -q` from the repository root (all tests green, zero regressions against the T001 baseline) and walk `specs/025-store-transaction-foundation/quickstart.md` scenarios 1–6 end to end
+- [X] T010 [P] Update `specs/025-store-transaction-foundation/quickstart.md` § 6 to move the crash-injection, busy-timeout clean-failure, and FR-004 completeness tests from "planned additions" to existing coverage, with the final test count
+- [X] T011 [P] Traceability sweep (SC-004): confirm each of FR-001–FR-010 maps to at least one test in `test_flow.py` or a stated property in `specs/025-store-transaction-foundation/contracts/store-transaction.md` / `specs/025-store-transaction-foundation/contracts/projection.md`, and that each maps to HLD-003 or HLD-013; including an explicit FR-006 mechanical check: scan `core.md` and `flow.py` for named AI-implementation/model/vendor references (expect zero matches), confirming the loop depends only on the CLI and markdown/text interfaces; add any missing test to `test_flow.py` before closing this task
+- [X] T012 Full validation: run `python3 -m pytest test_flow.py -q` from the repository root (all tests green, zero regressions against the T001 baseline) and walk `specs/025-store-transaction-foundation/quickstart.md` scenarios 1–6 end to end
 
 ---
 
