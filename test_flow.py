@@ -349,6 +349,10 @@ def test_connection_hardening(tmp_path):  # HLD-013
     assert c.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
     assert c.execute("PRAGMA busy_timeout").fetchone()[0] >= 1000
     assert c.execute("PRAGMA synchronous").fetchone()[0] == 1  # NORMAL
+    # FR-009 / contracts/store-transaction.md § Chosen-implementation bindings:
+    # explicit transaction control — isolation_level=None hands BEGIN/COMMIT/ROLLBACK
+    # to the caller so every operation is one explicit transaction (FR-007).
+    assert c.isolation_level is None
     c.close()
 
 
@@ -401,6 +405,106 @@ def test_done_wakes_parent_atomically(conn):  # HLD-013
     # one transaction: child done AND parent woken, never half-applied
     assert state(conn, a) == "done"
     assert state(conn, parent) == "pending"
+
+
+# --- 025-store-transaction-foundation: crash atomicity (US1) ----------------
+
+
+def test_transaction_rollback_leaves_no_partial_state(conn):  # FR-007, acceptance scenarios 1-2
+    """An exception raised inside a `_tx()` operation leaves the store exactly at
+    the pre-operation state (no partial writes to the task row or its baton), and
+    a normally-completed operation applies as a single unit."""
+    tid = flow.add(conn, "task")
+    before_task = dict(flow._task(conn, tid))
+    _, before_entries = flow.context(conn, tid)
+    before_entries = [dict(e) for e in before_entries]
+
+    class Boom(Exception):
+        pass
+
+    with pytest.raises(Boom):
+        with flow._tx(conn):
+            conn.execute("UPDATE tasks SET assignee=? WHERE id=?", ("ghost", tid))
+            flow._append(conn, tid, "note", "should never persist")
+            raise Boom("simulated failure mid-transaction")
+
+    after_task = dict(flow._task(conn, tid))
+    _, after_entries = flow.context(conn, tid)
+    after_entries = [dict(e) for e in after_entries]
+    assert after_task == before_task
+    assert after_entries == before_entries
+
+    # a normally-completed operation applies as a single unit
+    flow.note(conn, tid, "applied atomically")
+    _, entries2 = flow.context(conn, tid)
+    assert any(e["text"] == "applied atomically" for e in entries2)
+
+
+def test_crash_injection_leaves_pre_operation_state(tmp_path):  # SC-001, spec edge case 1
+    """research Decision 5: a child process is SIGKILLed between BEGIN IMMEDIATE
+    and COMMIT. Reopening the store must show the exact pre-operation state (no
+    partial writes), and a subsequent writer must commit normally (no leftover
+    lock held by the killed process).
+
+    A real subprocess (not a thread, not a `fork()`ed child) is required so the
+    kill is an honest process death: on this platform, `multiprocessing`'s
+    `fork` start method segfaults the child inside `sqlite3.connect()` (a known
+    fork-safety hazard of forking a Python process that has already loaded
+    CPython/SQLite's linked libraries), which is itself not the guarantee under
+    test — `subprocess.Popen` gives a clean child process image via exec."""
+    import os
+    import signal
+    import subprocess
+    import sys
+    import time
+
+    db = tmp_path / "crash.db"
+    ready_marker = tmp_path / "ready.marker"
+    c0 = flow.connect(db)
+    tid = flow.add(c0, "pre-crash task")
+    before_task = dict(flow._task(c0, tid))
+    _, before_entries = flow.context(c0, tid)
+    before_entries = [dict(e) for e in before_entries]
+    c0.close()
+
+    child_script = f"""
+import time
+from pathlib import Path
+import flow
+c = flow.connect(Path({str(db)!r}))
+c.execute("BEGIN IMMEDIATE")
+c.execute("UPDATE tasks SET assignee='ghost-writer' WHERE id=?", ({tid!r},))
+flow._append(c, {tid!r}, "note", "in-flight write, must never be visible")
+Path({str(ready_marker)!r}).write_text("ready")
+time.sleep(30)  # holds the write lock open until SIGKILLed
+"""
+    repo_root = str(Path(flow.__file__).parent)
+    p = subprocess.Popen([sys.executable, "-c", child_script], cwd=repo_root)
+    try:
+        deadline = time.monotonic() + 5
+        while not ready_marker.exists():
+            assert time.monotonic() < deadline, "child did not signal readiness before the timeout"
+            time.sleep(0.02)
+        time.sleep(0.2)  # let the child settle into its blocking sleep, past the writes
+        os.kill(p.pid, signal.SIGKILL)
+        assert p.wait(timeout=5) != 0  # killed, not a clean exit
+    finally:
+        if p.poll() is None:
+            p.kill()
+            p.wait(timeout=5)
+
+    c1 = flow.connect(db)
+    after_task = dict(flow._task(c1, tid))
+    _, after_entries = flow.context(c1, tid)
+    after_entries = [dict(e) for e in after_entries]
+    assert after_task == before_task          # no partial write survived the kill
+    assert after_entries == before_entries
+
+    # a subsequent writer is not blocked by any lock the killed process held
+    flow.note(c1, tid, "writer after crash proceeds normally")
+    _, entries2 = flow.context(c1, tid)
+    assert any(e["text"] == "writer after crash proceeds normally" for e in entries2)
+    c1.close()
 
 
 # --- HLD-010 work routing (soft affinity) ----------------------------------
@@ -990,3 +1094,196 @@ def test_hld016_verify_invariant(conn, tmp_path):
     # the CLI refuses done without an outcome (argparse: outcome is positional)
     with pytest.raises(SystemExit):
         flow.main(["--db", str(tmp_path / "cli.db"), "done", "1"])
+
+
+# --- 025-store-transaction-foundation: projection contract (US2) -----------
+
+
+def test_fr004_projection_completeness(conn, tmp_path):  # research Decision 6b
+    """A projection an agent reads directly preserves the FR-004 elements across
+    a full lifecycle: stable task ID, task references (split parent/children),
+    baton/context state (state, assignee, label, outcome, entries in order), and
+    reply context (question and answer) — per contracts/projection.md § Required
+    preserved elements.
+
+    A generic baton entry's text (e.g. a note) is rendered verbatim, so any
+    report/log link a caller records is preserved the same way — that generic
+    mechanism is the only one flow.py has for "links to relevant reports/logs"
+    today.
+
+    Delta (not a defect, characterized here): contracts/projection.md also lists
+    "per-escalation IDs where present" under stable IDs. flow.py does not surface
+    an escalation's own row id anywhere — not in the projection, and not in
+    reply(), which resolves the oldest open escalation rather than one addressed
+    by id. Addressable-escalation routing is deferred design (see HLD-005/HLD-017
+    elsewhere in this file), not a gap introduced by this feature; it is not
+    asserted here.
+    """
+    pid = flow.add(conn, "parent lifecycle task", label="proj")
+    flow.next_task(conn, assignee="runner-x")                       # claim -> assignee
+    flow.note(conn, pid, "note entry; see report: reports/R1.md")   # note (+ report link text)
+    flow.decide(conn, pid, "decision entry")                        # decide
+    flow.escalate(conn, pid, "which path?", session="runner-x")     # escalate -> question
+    flow.reply(conn, pid, "use path A")                             # reply -> answer
+    child_ids = flow.split(conn, pid, ["child one", "child two"])   # split -> parent/child refs
+    flow.next_task(conn, assignee="runner-y")
+    flow.done(conn, child_ids[0], "child one done")
+    flow.next_task(conn, assignee="runner-z")
+    flow.done(conn, child_ids[1], "child two done")                 # parent wakes: pending
+    flow.next_task(conn, assignee="runner-x")                       # re-claim parent
+    flow.done(conn, pid, "parent outcome text", session="runner-x")
+
+    flow.project(conn, pid)
+    md = (tmp_path / ".flow" / "batons" / f"{pid}.md").read_text()
+
+    # stable ID (task)
+    assert f"task {pid}" in md
+    # task references (split parent/children)
+    for cid in child_ids:
+        assert str(cid) in md
+    # baton/context state
+    assert "**state**: done" in md
+    assert "**assignee**: runner-x" in md
+    assert "**label**: proj" in md
+    assert "**outcome**: parent outcome text" in md
+    # reply context: question and answer both present
+    assert "which path?" in md and "use path A" in md
+    # note/decide entries
+    assert "note entry; see report: reports/R1.md" in md
+    assert "decision entry" in md
+    # entries preserved in append order
+    idx_note = md.index("note entry")
+    idx_decide = md.index("decision entry")
+    idx_esc = md.index("which path?")
+    idx_reply = md.index("use path A")
+    assert idx_note < idx_decide < idx_esc < idx_reply
+
+
+def test_projection_hand_edit_ignored_and_overwritten(conn, tmp_path):  # FR-002/FR-005, edge case 2
+    """Characterizes no-write-path + re-derivability: a hand-edited projection
+    file is not read by the system (context() reads only the DB — already
+    covered by test_context_survives_markdown_deletion / test_hld008_verify_
+    invariant) and is overwritten verbatim on the next regeneration, per
+    contracts/projection.md § Write rules ("edits to projection files are
+    ignored by the system and overwritten on next regeneration")."""
+    tid = flow.add(conn, "task")
+    md_path = tmp_path / ".flow" / "batons" / f"{tid}.md"
+    assert md_path.exists()
+
+    # hand-edit the projection file directly (never through the CLI)
+    md_path.write_text("# TAMPERED — this file was hand-edited, not written by flow\n")
+
+    # the store is untouched by the edit; context() reads only the DB
+    t, _ = flow.context(conn, tid)
+    assert t["text"] == "task"
+
+    # next regeneration overwrites the tampered content
+    flow.note(conn, tid, "trigger regeneration")
+    regenerated = md_path.read_text()
+    assert "TAMPERED" not in regenerated
+    assert "trigger regeneration" in regenerated
+
+
+def test_projection_written_only_after_commit(conn, tmp_path):  # FR-010
+    """A failed (rolled-back) operation leaves the projection untouched at its
+    prior committed content; a successful operation regenerates it only after
+    commit, per contracts/projection.md § Write rules."""
+    tid = flow.add(conn, "task")
+    md_path = tmp_path / ".flow" / "batons" / f"{tid}.md"
+    before = md_path.read_text()
+
+    # a failed operation must not touch the projection: note()/decide() cannot
+    # fail on an existing task, so exercise the failure path directly with _tx,
+    # mirroring test_transaction_rollback_leaves_no_partial_state — no call to
+    # project() is ever reached when the transaction raises.
+    class Boom(Exception):
+        pass
+
+    with pytest.raises(Boom):
+        with flow._tx(conn):
+            flow._append(conn, tid, "note", "should not be projected")
+            raise Boom("simulated failure before commit")
+
+    assert md_path.read_text() == before  # untouched: no post-commit projection ran
+
+    # a successful operation regenerates the projection only after commit
+    flow.note(conn, tid, "committed content")
+    after = md_path.read_text()
+    assert "committed content" in after
+    assert after != before
+
+
+# --- 025-store-transaction-foundation: concurrent claiming (US3) -----------
+
+
+def test_claim_is_all_or_nothing_on_failed_attempt(conn):  # FR-008, SC-003
+    """After a failed (rolled-back) claim attempt, neither the assignee/state
+    change nor the claimed-by baton entry is present — they appear together or
+    not at all (same-transaction property of the claim protocol, per
+    contracts/store-transaction.md § Atomic claim protocol)."""
+    tid = flow.add(conn, "task")
+    before_task = dict(flow._task(conn, tid))
+    _, before_entries = flow.context(conn, tid)
+    before_entries = [dict(e) for e in before_entries]
+
+    class Boom(Exception):
+        pass
+
+    # simulate a claim attempt that fails after the write but before commit —
+    # same shape as next_task's claim block, injected with a failure.
+    with pytest.raises(Boom):
+        with flow._tx(conn):
+            conn.execute(
+                "UPDATE tasks SET state='in_progress', assignee=? WHERE id=?",
+                ("ghost", tid),
+            )
+            flow._append(conn, tid, "system", "claimed by session ghost")
+            raise Boom("simulated failure mid-claim")
+
+    after_task = dict(flow._task(conn, tid))
+    _, after_entries = flow.context(conn, tid)
+    after_entries = [dict(e) for e in after_entries]
+    # neither half of the claim survived — all-or-nothing
+    assert after_task == before_task
+    assert after_entries == before_entries
+    assert after_task["assignee"] is None
+    assert after_task["state"] == "pending"
+
+
+def test_busy_timeout_clean_failure(tmp_path):  # spec edge case 3, research Decision 6a
+    """A writer whose wait exceeds busy_timeout fails cleanly (sqlite3.
+    OperationalError, no partial write), and the same writer succeeds once the
+    lock is released, per contracts/store-transaction.md § Error behavior."""
+    import sqlite3
+
+    db = tmp_path / "busy.db"
+    c1 = flow.connect(db)
+    tid = flow.add(c1, "contested task")
+
+    # a short per-connection busy_timeout on the second connection, for test speed
+    c2 = flow.connect(db)
+    c2.execute("PRAGMA busy_timeout=200")
+
+    c1.execute("BEGIN IMMEDIATE")  # c1 holds the write lock
+    c1.execute("UPDATE tasks SET assignee='holder' WHERE id=?", (tid,))
+
+    with pytest.raises(sqlite3.OperationalError):
+        c2.execute("BEGIN IMMEDIATE")
+        c2.execute("UPDATE tasks SET assignee='second-writer' WHERE id=?", (tid,))
+        c2.execute("COMMIT")
+
+    # no partial write from the failed attempt is visible
+    row = c1.execute("SELECT assignee FROM tasks WHERE id=?", (tid,)).fetchone()
+    assert row["assignee"] == "holder"
+
+    c1.execute("COMMIT")  # release the lock c1 was still holding
+
+    # the same writer succeeds once the lock is released
+    c2.execute("BEGIN IMMEDIATE")
+    c2.execute("UPDATE tasks SET assignee='second-writer' WHERE id=?", (tid,))
+    c2.execute("COMMIT")
+    row2 = c2.execute("SELECT assignee FROM tasks WHERE id=?", (tid,)).fetchone()
+    assert row2["assignee"] == "second-writer"
+
+    c1.close()
+    c2.close()
