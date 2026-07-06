@@ -116,7 +116,7 @@ whose wait exceeds the busy timeout fails cleanly.
 verification.
 
 - [ ] T010 [P] Update `specs/025-store-transaction-foundation/quickstart.md` § 6 to move the crash-injection, busy-timeout clean-failure, and FR-004 completeness tests from "planned additions" to existing coverage, with the final test count
-- [ ] T011 [P] Traceability sweep (SC-004): confirm each of FR-001–FR-010 maps to at least one test in `test_flow.py` or a stated property in `specs/025-store-transaction-foundation/contracts/store-transaction.md` / `specs/025-store-transaction-foundation/contracts/projection.md`, and that each maps to HLD-003 or HLD-013; add any missing test to `test_flow.py` before closing this task
+- [ ] T011 [P] Traceability sweep (SC-004): confirm each of FR-001–FR-010 maps to at least one test in `test_flow.py` or a stated property in `specs/025-store-transaction-foundation/contracts/store-transaction.md` / `specs/025-store-transaction-foundation/contracts/projection.md`, and that each maps to HLD-003 or HLD-013; including an explicit FR-006 mechanical check: scan `core.md` and `flow.py` for named AI-implementation/model/vendor references (expect zero matches), confirming the loop depends only on the CLI and markdown/text interfaces; add any missing test to `test_flow.py` before closing this task
 - [ ] T012 Full validation: run `python3 -m pytest test_flow.py -q` from the repository root (all tests green, zero regressions against the T001 baseline) and walk `specs/025-store-transaction-foundation/quickstart.md` scenarios 1–6 end to end
 
 ---
