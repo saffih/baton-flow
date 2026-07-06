@@ -1,8 +1,9 @@
-# Baton Flow — Constitution (PROPOSAL)
+# Baton Flow — Constitution
 
-**Status:** PROPOSAL ONLY. This is authored by Journey 2 as a proposal.
-It is applied to `.specify/memory/constitution.md` only at
-`CONSTITUTION_APPROVAL_GATE`, where SpecKit owns the applied constitution.
+**Status:** APPLIED. Authored by Journey 2 as a proposal; approved and applied
+at `CONSTITUTION_APPROVAL_GATE` (commit `696f58d`, Flow PR #15; gate record:
+HLDspec `docs/flow_journey2_planning/flow-constitution-approval-gate-record.md`).
+SpecKit owns this applied constitution.
 
 **Source:** Derived from the 11 constitution-backed HLD sections
 (HLD-003/004/005/007/008/009/010/013/014/015/016).
